@@ -1,0 +1,11 @@
+config.yaml
+runs/
+artifacts/
+.inspection/
+.build/
+__pycache__/
+*.py[cod]
+.venv/
+.idea/
+*.log
+.inspection/

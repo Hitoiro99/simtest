@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simtest"
+version = "0.1.0"
+description = "Reproducible numerical solver testing and analytical comparison"
+requires-python = ">=3.8"
+dependencies = ["PyYAML>=5.3", "Jinja2>=2.10", "matplotlib>=3.1"]
+
+[project.scripts]
+simtest = "simtest.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["simtest*", "solvers*"]
+
+[tool.setuptools.package-data]
+simtest = ["report_assets/*.js", "report_assets/*.css"]

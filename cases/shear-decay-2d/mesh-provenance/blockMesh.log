@@ -1,0 +1,77 @@
+/*---------------------------------------------------------------------------*\
+  =========                 |
+  \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox
+   \\    /   O peration     | Website:  https://openfoam.org
+    \\  /    A nd           | Version:  12
+     \\/     M anipulation  |
+\*---------------------------------------------------------------------------*/
+Build  : 12-86e126a7bc4d
+Exec   : /opt/openfoam12/platforms/linux64GccDPInt32Opt/bin/blockMesh -case /mnt/c/Users/Administrator/Documents/ChatGPT/流体结构数值模拟软件自动测试系统方案/.build/mesh
+Date   : Oct 13 2026
+Time   : 12:16:26
+Host   : "DESKTOP-BJ8PH1Q"
+PID    : 445
+I/O    : uncollated
+Case   : /mnt/c/Users/Administrator/Documents/ChatGPT/流体结构数值模拟软件自动测试系统方案/.build/mesh
+nProcs : 1
+sigFpe : Enabling floating point exception trapping (FOAM_SIGFPE).
+fileModificationChecking : Monitoring run-time modified files using timeStampMaster (fileModificationSkew 10)
+allowSystemOperations : Allowing user-supplied system call operations
+
+// * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
+Create time
+
+Reading "blockMeshDict"
+
+Creating block mesh from
+    "system/blockMeshDict"
+Creating block edges
+No non-planar block faces defined
+Creating topology blocks
+Creating topology patches
+
+Creating block mesh topology
+
+Check topology
+
+	Basic statistics
+		Number of internal faces : 0
+		Number of boundary faces : 6
+		Number of defined boundary faces : 6
+		Number of undefined boundary faces : 0
+	Checking patch -> block consistency
+
+Creating block offsets
+Creating merge list .
+
+Creating polyMesh from blockMesh
+Creating patches
+Creating cells
+Creating points with scale 1
+    Block 0 cell size :
+        i : 0.025 .. 0.025
+        j : 0.003125 .. 0.003125
+        k : 0.01
+
+Detected cyclic patches; ordering boundary faces
+
+Writing polyMesh
+----------------
+Mesh Information
+----------------
+  boundingBox: (0 0 0) (0.1 0.1 0.01)
+  nPoints: 330
+  nCells: 128
+  nFaces: 548
+  nInternalFaces: 220
+----------------
+Patches
+----------------
+  patch 0 (start: 220 size: 32) name: left
+  patch 1 (start: 252 size: 32) name: right
+  patch 2 (start: 284 size: 4) name: lowerWall
+  patch 3 (start: 288 size: 4) name: upperWall
+  patch 4 (start: 292 size: 256) name: frontAndBack
+
+End
+

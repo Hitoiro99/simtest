@@ -1,0 +1,21 @@
+values:
+  initial_velocity: {value: 0.1, unit: m/s}
+
+references:
+  analytical_velocity:
+    kind: analytical
+    field: velocity
+    domain: internalMesh
+    reference_scale: {value: 0.1, unit: m/s}
+    expression:
+      x: "A * sin(pi*y/H) * exp(-nu*(pi/H)**2*t)"
+      y: "0"
+      z: "0"
+    parameters:
+      A: {value: 0.1, unit: m/s}
+      nu: {value: 0.001, unit: m^2/s}
+      H: {value: 0.1, unit: m}
+    source:
+      kind: formula
+      file: references/analytical-solution.md
+      locator: "Equation 1; unforced laminar shear diffusion"

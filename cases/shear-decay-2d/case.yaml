@@ -1,0 +1,52 @@
+id: shear-decay-2d
+version: "1.0"
+title: 二维层流速度扩散
+tags: [incompressible, laminar, transient, analytical]
+
+execution:
+  backend: serial
+  processes: 1
+
+constants:
+  kinematic_viscosity:
+    type: real
+    value: 0.001
+    unit: m^2/s
+
+variables:
+  initial_velocity:
+    type: real
+    required: true
+    unit: m/s
+
+derived_variables: {}
+
+monitors:
+  mean_velocity:
+    display_name: 体积加权平均流向速度
+    type: real
+    unit: m/s
+    mapping:
+      - solver: OpenFOAM
+        name: volAverage(Ux)
+  residual_Ux:
+    display_name: 每时间步首个流向速度线性求解初始残差
+    type: real
+    mapping:
+      - solver: OpenFOAM
+        name: residual:Ux
+  residual_p:
+    display_name: 每时间步首个压力线性求解初始残差
+    type: real
+    mapping:
+      - solver: OpenFOAM
+        name: residual:p
+
+fields:
+  velocity:
+    display_name: 速度
+    type: real
+    unit: m/s
+    mapping:
+      - solver: OpenFOAM
+        name: U

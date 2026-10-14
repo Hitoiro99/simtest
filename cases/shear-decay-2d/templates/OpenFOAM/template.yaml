@@ -1,0 +1,3 @@
+id: openfoam-foundation-12
+solver: OpenFOAM
+compatibility: "12"

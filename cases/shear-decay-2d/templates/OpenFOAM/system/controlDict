@@ -1,0 +1,46 @@
+FoamFile
+{
+    format ascii;
+    class dictionary;
+    object controlDict;
+}
+application icoFoam;
+startFrom startTime;
+startTime 0;
+stopAt endTime;
+endTime 1;
+deltaT 0.001;
+writeControl timeStep;
+writeInterval 100;
+purgeWrite 0;
+writeFormat ascii;
+writePrecision 15;
+writeCompression off;
+timeFormat general;
+timePrecision 12;
+runTimeModifiable false;
+functions
+{
+    velocityComponents
+    {
+        type components;
+        libs ("libfieldFunctionObjects.so");
+        field U;
+        executeControl timeStep;
+        executeInterval 1;
+        writeControl none;
+    }
+    meanVelocity
+    {
+        type volFieldValue;
+        libs ("libfieldFunctionObjects.so");
+        select all;
+        fields (Ux);
+        operation volAverage;
+        writeFields false;
+        executeControl timeStep;
+        executeInterval 1;
+        writeControl timeStep;
+        writeInterval 1;
+    }
+}

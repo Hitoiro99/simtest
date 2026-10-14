@@ -1,0 +1,46 @@
+FoamFile
+{
+    format ascii;
+    class volVectorField;
+    object U;
+}
+dimensions [0 1 -1 0 0 0 0];
+internalField #codeStream
+{
+    codeInclude
+    #{
+        #include "fvMesh.H"
+        #include "volFields.H"
+        #include "mathematicalConstants.H"
+    #};
+    codeOptions
+    #{
+        -I$(LIB_SRC)/finiteVolume/lnInclude -I$(LIB_SRC)/meshTools/lnInclude
+    #};
+    codeLibs
+    #{
+        -lfiniteVolume -lmeshTools
+    #};
+    code
+    #{
+        const IOdictionary& dictionary = static_cast<const IOdictionary&>(dict);
+        const fvMesh& mesh = refCast<const fvMesh>(dictionary.db());
+        const vectorField& centres = mesh.C();
+        vectorField values(mesh.nCells(), vector::zero);
+        const scalar amplitude = {{ initial_velocity | real }};
+        const scalar height = 0.1;
+        forAll(values, celli)
+        {
+            values[celli].x() = amplitude*sin(constant::mathematical::pi*centres[celli].y()/height);
+        }
+        writeEntry(os, "", values);
+    #};
+};
+boundaryField
+{
+    left { type cyclic; }
+    right { type cyclic; }
+    lowerWall { type fixedValue; value uniform (0 0 0); }
+    upperWall { type fixedValue; value uniform (0 0 0); }
+    frontAndBack { type empty; }
+}
