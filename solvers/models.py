@@ -69,11 +69,16 @@ class RunContext:
     manifest: Dict[str, Any] = field(default_factory=dict)
 
     @property
-    def work(self): return self.run_dir / "work"
+    def work(self):
+        return self.run_dir / "work"
+
     @property
-    def input(self): return self.run_dir / "input"
+    def input(self):
+        return self.run_dir / "input"
+
     @property
-    def normalized(self): return self.run_dir / "normalized"
+    def normalized(self):
+        return self.run_dir / "normalized"
 
 
 @dataclass

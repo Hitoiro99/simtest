@@ -156,14 +156,14 @@ figures/        默认视图的 PNG、SVG、PDF
 
 | 位置 | 作用 | 什么时候使用 |
 |---|---|---|
-| `simtest/__main__.py` | `python3 -m simtest` 的 Linux / WSL 命令入口 | 所有平台命令 |
-| `simtest/cli.py` | 解析命令，组织校验、运行、报告 | 所有命令 |
-| `simtest/cases.py`、`templates.py` | 读取案例与工况，检查参数，物化模板 | 准备阶段 |
-| `simtest/runner.py` | 安装探测、作业隔离、运行调度与收尾 | setup / validate / run |
+| `simtest.py` | 命令入口，解析参数并调用各业务模块 | 所有平台命令 |
+| `case_management/` | `cases.py` 读取案例/工况；`templates.py` 选择、继承并物化模板 | 校验及准备阶段 |
+| `execution/` | `environment.py` 激活环境；`runner.py` 探测安装、建立作业并组织各阶段 | setup / validate / run |
 | `solvers/` | Adapter、进程监督、OpenFOAM 执行及结果读取 | 网格预处理、求解、后处理 |
-| `simtest/analysis.py`、`expression.py`、`units.py` | 参考式求值、单位换算及偏差计算 | 标准化之后 |
-| `simtest/archive.py` | 标准文件检查、归档哈希和原生数据清理边界 | 作业收尾及报告读取 |
-| `simtest/report*.py`、`report_assets/` | HTML、静态图、CSV / JSON 报告 | run 结束或 report 命令 |
+| `postprocessing/` | `analysis.py` 计算参考偏差；`vtk_bridge.py` 由 pvpython 独立执行场标准化 | 求解之后 |
+| `reporting/` | `report.py` 组织报告；`report_html.py` 与 `report_assets/` 生成 HTML、图表及 CSV / JSON | run 结束或 report 命令 |
+| `storage/` | `archive.py` 检查标准文件、校验归档哈希并控制原生数据清理 | 作业收尾及报告读取 |
+| `common/` | 文件操作、表达式、单位换算与平台版本；不主动启动求解 | 各业务模块复用 |
 | `cases/` | 案例物理定义、工况、模板、网格与参考解 | 所有计算的源输入 |
 | `config.yaml` | 本机求解器安装路径和环境配置 | 首次配置后由平台读取 |
 | `runs/` | 每次运行的输入快照、工作区、日志和状态 | 计算、失败排查 |
@@ -171,6 +171,8 @@ figures/        默认视图的 PNG、SVG、PDF
 | `tests/` | 单元、Reader 及集成回归测试 | 修改代码后验证 |
 | `cases/<case-id>/mesh-preparation/` | 案例专属的源网格制备脚本和配置 | 显式制备网格时 |
 | `tests/report/` | HTML 报告的浏览器交互回归 | 开发或专项检查 |
+
+`simtest.py` 只负责命令入口；各同级业务目录使用轻量 Python 包组织导入。`solvers/` 继续独立保存内核行为，`cases/` 保存物理输入，`runs/` 和 `artifacts/` 保存数据。目录拆分不改变命令、数值定义及历史归档格式。
 
 运行顺序：
 
@@ -230,6 +232,8 @@ python3 -m simtest setup --solver OpenFOAM --version 12 \
 
 `config.yaml` 只保存安装和环境，并在 `.gitignore` 中忽略。替换已登记安装时显式加 `--force`，平台写入前会探测实际版本。日常直接使用 `python3 -m simtest`，安装包后也可在同一 Linux 环境使用 `simtest`。
 
+使用普通安装的命令入口时，显式指定案例库所在的工程根目录，例如 `simtest --root /实际工程路径 list cases`。在源码根目录执行 `python3 -m simtest` 时会自动使用该目录。
+
 ### 常见现象
 
 | 现象 | 判断 / 处理 |
@@ -258,7 +262,7 @@ AICFD-NewPre 当前未安装。CGNS / MSH 跨格式路径明确返回 `MeshConve
 python3 -m unittest discover -s tests -v
 ~~~
 
-当前 20 项测试通过，覆盖参数与单位、模板、受限表达式、版本规则、监控边界与坏值、矢量误差、归档损坏、失败数据保留、进程组超时、原生 Reader 与导出回退，以及 HTML 报告分组和安全嵌入。
+当前 25 项测试通过，覆盖 CLI 默认参数和映射校验、工况选择、失败作业报告、准备模式、参数与单位、模板、受限表达式、版本规则、监控边界与坏值、矢量误差、归档损坏、失败数据保留、进程组超时、原生 Reader 与导出回退，以及 HTML 报告分组和安全嵌入。
 
 另提供可选浏览器回归脚本（Node 22+，默认使用 Windows 已安装的 Edge）。这项检查在 **Windows PowerShell 的工程根目录** 单独执行，平台运行命令仍在 Linux / WSL 执行：
 

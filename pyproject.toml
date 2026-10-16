@@ -10,10 +10,13 @@ requires-python = ">=3.8"
 dependencies = ["PyYAML>=5.3", "Jinja2>=2.10", "matplotlib>=3.1"]
 
 [project.scripts]
-simtest = "simtest.cli:main"
+simtest = "simtest:main"
+
+[tool.setuptools]
+py-modules = ["simtest"]
 
 [tool.setuptools.packages.find]
-include = ["simtest*", "solvers*"]
+include = ["case_management*", "execution*", "postprocessing*", "reporting*", "storage*", "common*", "solvers*"]
 
 [tool.setuptools.package-data]
-simtest = ["report_assets/*.js", "report_assets/*.css"]
+reporting = ["report_assets/*.js", "report_assets/*.css"]
