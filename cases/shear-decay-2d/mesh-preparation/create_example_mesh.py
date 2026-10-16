@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from execution.environment import activate, executable
+from run_control.environment import find_tool, load_env
 from common.io import atomic_json, inventory, sha256
 from solvers.base import supervise
 from solvers.models import Command
@@ -26,10 +26,10 @@ def main():
     (build / "system" / "controlDict").write_text(
         "FoamFile { format ascii; class dictionary; object controlDict; }\napplication icoFoam; startFrom startTime; startTime 0; stopAt endTime; endTime 1; deltaT 0.001; writeControl timeStep; writeInterval 100;\n"
     )
-    env = activate({"environment": {"kind": "script", "script": "/opt/openfoam12/etc/bashrc"}})
+    env = load_env({"environment": {"kind": "script", "script": "/opt/openfoam12/etc/bashrc"}})
     records = []
     for name in ("blockMesh", "checkMesh"):
-        result = supervise(Command([executable(name, env), "-case", str(build)], build, env), build / (name + ".log"))
+        result = supervise(Command([find_tool(name, env), "-case", str(build)], build, env), build / (name + ".log"))
         records.append(result.diagnostics)
     log = (build / "checkMesh.log").read_text()
     if "Mesh OK" not in log:

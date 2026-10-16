@@ -96,7 +96,7 @@ python3 -m simtest report shear-decay-2d
 
 **不要原样输入 `<job-id>`。** 它是说明中的占位符，尖括号在 shell 中有特殊含义。请用 `list runs` 输出中的真实 ID 替换，像上面示例那样直接填写。
 
-### 4. 打开最新报告
+### 4. 打开最新报告(待添加新功能)
 
 在 Linux / WSL 中查找最新报告：
 
@@ -157,19 +157,20 @@ figures/        默认视图的 PNG、SVG、PDF
 | 位置 | 作用 | 什么时候使用 |
 |---|---|---|
 | `simtest.py` | 命令入口，解析参数并调用各业务模块 | 所有平台命令 |
+| `config.yaml` | 本机求解器安装路径和环境配置 | 首次配置后由平台读取 |
+| `cases/` | 案例物理定义、工况、模板、网格与参考解 | 所有计算的源输入 |
+| `cases/<case-id>/mesh-preparation/` | 案例专属的源网格制备脚本和配置 | 显式制备网格时 |
 | `case_management/` | `cases.py` 读取案例/工况；`templates.py` 选择、继承并物化模板 | 校验及准备阶段 |
-| `execution/` | `environment.py` 激活环境；`runner.py` 探测安装、建立作业并组织各阶段 | setup / validate / run |
 | `solvers/` | Adapter、进程监督、OpenFOAM 执行及结果读取 | 网格预处理、求解、后处理 |
+| `run_control/` | `install.py` 登记和选择已有安装；`environment.py` 加载环境及执行辅助命令；`jobs.py` 创建作业并组织各阶段 | setup / validate / run |
 | `postprocessing/` | `analysis.py` 计算参考偏差；`vtk_bridge.py` 由 pvpython 独立执行场标准化 | 求解之后 |
 | `reporting/` | `report.py` 组织报告；`report_html.py` 与 `report_assets/` 生成 HTML、图表及 CSV / JSON | run 结束或 report 命令 |
 | `storage/` | `archive.py` 检查标准文件、校验归档哈希并控制原生数据清理 | 作业收尾及报告读取 |
 | `common/` | 文件操作、表达式、单位换算与平台版本；不主动启动求解 | 各业务模块复用 |
 | `cases/` | 案例物理定义、工况、模板、网格与参考解 | 所有计算的源输入 |
-| `config.yaml` | 本机求解器安装路径和环境配置 | 首次配置后由平台读取 |
 | `runs/` | 每次运行的输入快照、工作区、日志和状态 | 计算、失败排查 |
 | `artifacts/` | 经校验的结果归档和派生报告 | 长期留存、比较、阅读 |
 | `tests/` | 单元、Reader 及集成回归测试 | 修改代码后验证 |
-| `cases/<case-id>/mesh-preparation/` | 案例专属的源网格制备脚本和配置 | 显式制备网格时 |
 | `tests/report/` | HTML 报告的浏览器交互回归 | 开发或专项检查 |
 
 `simtest.py` 只负责命令入口；各同级业务目录使用轻量 Python 包组织导入。`solvers/` 继续独立保存内核行为，`cases/` 保存物理输入，`runs/` 和 `artifacts/` 保存数据。目录拆分不改变命令、数值定义及历史归档格式。

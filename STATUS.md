@@ -37,7 +37,7 @@
 | 运行副本清理与去重 | 部分实现 | runs 中的 input/logs/normalized 仍与归档重复 |
 | 硬件和资源信息 | 部分实现 | CPU、OS、MPI、进程/线程数、耗时和峰值内存已有；完整内存配置、GPU、配额及多节点信息待补 |
 | 案例网格制备与报告测试归位 | 已实现 | 网格制备位于案例 mesh-preparation/；浏览器测试位于 tests/report/；空 tools/ 已移除 |
-| 平台代码按职责拆分 | 已实现 | 根目录 simtest.py 作为入口；案例、执行、后处理、报告、存储和公共工具分别位于同级目录；保持原 CLI 协议 |
+| 平台代码按职责拆分 | 已实现 | 根目录 simtest.py 作为入口；run_control 的 install/environment/jobs 分别负责安装、环境和作业；其余职责目录同级，保持原 CLI 协议 |
 | 项目代码风格与可读性约定 | 已实现 | AGENTS.md 已记录用户最终入口样式；受维护的 Python、JavaScript/CJS、CSS 及测试已统一，复杂条件式展开，保留简单值选择及用户最终入口排版 |
 | 项目 AGENTS.md 工作规则 | 已实现 | 根目录文档维护目录、测试和 Linux/WSL 入口规则；solvers/ 位置保持不变 |
 
@@ -104,3 +104,31 @@
 - 验证：WSL Ubuntu / Python 3.8.10 下 25 项 unittest 全部通过，无跳过；六份现有归档的前后图表、汇总表、内嵌数据及 HTML 正文一致；五类异常分别覆盖归档成功/失败共 10 种情形，状态、历史及诊断一致。
 - 验证：JavaScript/CJS 语法通过，前端等价抽样 1,257 组通过；独立临时工作区的串行和两进程 MPI 均为 SUCCEEDED，原生读取各覆盖 11 个时刻并生成 HTML，清理策略保持一致。Node 24.21.0 / Edge 对新生成合并报告的 14 项交互检查通过，JavaScript 异常为 0。
 - 验证：最终差异格式检查通过；未重新打包或验证其他求解器/版本。临时格式工具、备份、求解目录、报告和截图在交付前清理，不向项目新增依赖或改动全局环境。
+
+### 009｜2026-10-16｜分离求解器部署与作业管理
+
+- 操作：拆分 `execution/runner.py → solver_deployment/installations.py、job_management/preparation.py、job_management/metadata.py、job_management/workflow.py、job_management/status.py`；移动 `execution/environment.py → solver_deployment/environment.py`。新增两个新包的 `__init__.py`，删除旧 `execution/__init__.py` 及迁空目录中的字节码缓存。
+- 操作：安装登记、选择及环境辅助函数使用明确名称；作业准备与追溯分开，原内嵌 transition 移为显式接收 context/status 的状态记录函数，异常分类独立维护。修改 `pyproject.toml` 打包范围、`README.md` 与 `AGENTS.md` 的职责说明；更新 `STATUS.md` 功能表并追加本记录。
+- 操作：同步 `simtest.py`、`solvers/OpenFOAM/adapter.py`、`tests/{test_cli.py,test_integration.py}` 和 `cases/shear-decay-2d/mesh-preparation/create_example_mesh.py` 的导入、调用及 mock 名称；保留入口原有排版，状态模块分别使用 create_job_status、record_job_state、classify_job_failure。
+- 验证：WSL Ubuntu / Python 3.8.10 下完整 25 项 unittest 全部通过，无跳过；五个安装/环境函数的语法树在名称映射后与原实现一致，十种异常及归档失败情形的状态、历史和诊断一致。固定随机因子时，新旧作业 ID、身份及元数据一致，仅创建时间和对应实际源码的哈希按运行变化。
+- 验证：临时离线构建 wheel 并进行非 editable 安装，从源码目录外验证模块和控制台入口；新包、报告资源及桥接脚本均包含，旧 execution 不再打包，普通导入不加载 VTK。安装版 setup、validate、prepare-only、串行和两进程 MPI 全部通过；求解各保留 11 个场时刻，新包源码哈希、HTML 生成和清理策略正常。
+- 验证：Node 24.21.0 / Edge 对安装版新生成合并报告的 14 项浏览器交互检查通过，JavaScript 异常为 0；旧包导入与 mock 路径已清除，格式检查通过。案例输入、网格、固定样本、追溯及历史 runs/artifacts 共 1,426 个受保护文件的哈希保持一致。
+- 验证：临时工具、安装环境、备份、求解目录及报告截图在交付前清理；未改动全局环境、本机 config.yaml、数值算法或历史归档。未接入或验证其他求解器/版本，原有通用部署能力缺口保持原状态。
+
+### 010｜2026-10-16｜回退 execution 职责拆分
+
+- 操作：按用户指定撤销记录 009 对应的结构与命名修改，恢复 `execution/{__init__.py,runner.py,environment.py}`，移除拆分产生的 `solver_deployment/`、`job_management/` 八个 Python 文件及缓存；恢复原函数名和内嵌 transition。
+- 操作：还原 `simtest.py`、`solvers/OpenFOAM/adapter.py`、`tests/{test_cli.py,test_integration.py}`、`cases/shear-decay-2d/mesh-preparation/create_example_mesh.py` 的相关导入、调用和 mock，以及 `pyproject.toml`、`README.md`、`AGENTS.md` 的目录说明。保留后来新增的审批、讨论和用户最新修改前暂存规则，以及 README 备注等其他改动。更新功能表并追加本记录，历史 001—009 保留。
+- 操作：依据用户在回退过程中更新的规则，使用回退前快照执行 git add，暂存上次拆分涉及的版本作为检查点；排除后续规则和无关备注，工作区保留本次恢复结果。
+- 验证：恢复后的 runner.py 为原 346 行，五个顶层函数及内嵌 transition 回到原位置；WSL Ubuntu / Python 3.8.10 下完整 25 项 unittest 全部通过，无跳过。实际 list cases、list solvers、validate 和 list runs 均成功。
+- 验证：临时离线构建并安装 wheel，确认 execution 入包、两个拆分包不再入包，模块与控制台入口从源码目录外运行正常；安装版 prepare-only 停在 QUEUED，保留原状态历史，源码哈希恢复 execution 路径，无新增归档或报告。
+- 验证：1,426 个受保护输入、网格、样本、追溯及历史 runs/artifacts 文件哈希不变；暂存区与选定的回退前快照一致，其他原有暂存内容未被覆盖。工作区与暂存检查点的差异格式检查通过。临时工具、备份及验证目录在交付前清理；本次未重新执行完整串行/MPI 求解或浏览器回归。
+
+### 011｜2026-10-16｜以三个文件整理运行控制
+
+- 操作：按确认方案拆分 `execution/runner.py → run_control/install.py、run_control/jobs.py`，移动 `execution/environment.py → run_control/environment.py`；以 `run_control/__init__.py` 替换旧包初始化文件，删除迁空的 `execution/`。安装登记、安装选择、环境加载、工具定位及作业准备分别改名为 register_install、select_install、load_env、find_tool、prepare_job；保留 run_capture、run_job，Git 辅助函数使用 _git_revision。
+- 操作：在 `run_control/jobs.py` 内提取 _build_manifest；状态记录改名为 _record_state，继续作为 run_job 的内嵌函数，不另建状态模块。修改 `simtest.py`、`solvers/OpenFOAM/adapter.py`、`tests/{test_cli.py,test_integration.py}`、`cases/shear-decay-2d/mesh-preparation/create_example_mesh.py` 的导入、调用和 mock；修改 `pyproject.toml` 包发现及新作业源码哈希扫描路径。
+- 操作：修改 `README.md`、`AGENTS.md` 的目录职责，直接更新 `STATUS.md` 功能表并追加本记录；历史记录保留。修改前已执行 git add，将上次回退涉及的版本及关联文档加入暂存区作为检查点，本次改动留在工作区；未执行提交。
+- 验证：WSL Ubuntu / Python 3.8.10 下 CLI 的 5 项相关测试和完整 25 项 unittest 全部通过，无跳过。七个搬移/重命名函数、作业准备及清单构建逻辑的 AST 对比通过；固定随机因子的作业 ID、身份和除创建时间/源码哈希外的元数据相同；五类异常各覆盖归档成功/失败，共十种状态、历史及诊断对比一致。
+- 验证：在隔离临时目录离线构建 wheel 并完成非 editable 安装，确认新模块、报告 JS/CSS、VTK 桥接均入包，旧 execution 及此前拆分包不入包；从源码目录外验证安装登记、模块及控制台入口、查询和校验。准备模式的 QUEUED、状态历史、无归档/报告及新目录源码哈希均通过；安装版串行和两进程 MPI 均为 SUCCEEDED，各有 11 个 VTU 时刻、参考比较和 HTML 报告，work 按原策略清理。
+- 验证：初次临时构建因系统旧 importlib_metadata 与打包工具冲突失败，改用临时 setuptools 自带依赖后构建及安装通过；未修改全局环境或项目依赖。Python 语法、新模块格式及最终差异检查通过；源输入、网格、追溯、固定样本、历史 runs/artifacts 及本机 config.yaml 共 1,427 个受保护文件哈希不变。本次未重跑浏览器交互，也未验证其他求解器或版本；临时工具、备份和验证工作区交付前清理。

@@ -7,7 +7,7 @@ import shutil
 from pathlib import Path
 
 from case_management.cases import mesh_asset
-from execution.environment import executable, run_capture
+from run_control.environment import find_tool, run_capture
 from common.io import atomic_json, inventory, within
 from case_management.templates import materialize
 from . import __name__ as _package_name
@@ -39,7 +39,7 @@ class OpenFOAMAdapter(SolverAdapter):
     def probe(self, context):
         env = context.environment
         tools = {
-            name: executable(name, env)
+            name: find_tool(name, env)
             for name in (
                 "icoFoam",
                 "foamDictionary",
@@ -96,7 +96,7 @@ class OpenFOAMAdapter(SolverAdapter):
     def native(self, context, tool, args, label, case_path=None):
         location = case_path or context.work
         argv = [
-            context.info.executables.get(tool) or executable(tool, context.environment),
+            context.info.executables.get(tool) or find_tool(tool, context.environment),
             "-case",
             str(location),
         ] + list(args)
@@ -178,7 +178,7 @@ class OpenFOAMAdapter(SolverAdapter):
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", application):
             raise PreprocessError("非法 application")
         context.manifest["application"] = application
-        context.info.executables[application] = executable(application, context.environment)
+        context.info.executables[application] = find_tool(application, context.environment)
         source_snapshot = context.input / "_source"
         source_snapshot.mkdir()
         shutil.copy2(context.case_path / "case.yaml", source_snapshot / "case.yaml")

@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from storage.archive import archive, verify_archive
-from execution.environment import activate
+from run_control.environment import load_env
 from common.io import atomic_json, inventory
 from solvers.exceptions import PostprocessError, SolverCrashError
 from solvers.OpenFOAM.adapter import OpenFOAMAdapter
@@ -26,7 +26,7 @@ class IntegrationTests(unittest.TestCase):
             work = root / "work"
             shutil.copytree(ROOT / "tests" / "fixtures" / "openfoam12", work)
             (root / "logs").mkdir()
-            environment = activate({"environment": {"kind": "script", "script": "/opt/openfoam12/etc/bashrc"}})
+            environment = load_env({"environment": {"kind": "script", "script": "/opt/openfoam12/etc/bashrc"}})
             adapter = OpenFOAMAdapter()
             info = adapter.probe(SimpleNamespace(environment=environment))
             reference = {"field": "velocity", "domain": "internalMesh", "expression": {"x": "0", "y": "0", "z": "0"}}

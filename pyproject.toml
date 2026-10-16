@@ -16,7 +16,7 @@ simtest = "simtest:main"
 py-modules = ["simtest"]
 
 [tool.setuptools.packages.find]
-include = ["case_management*", "execution*", "postprocessing*", "reporting*", "storage*", "common*", "solvers*"]
+include = ["case_management*", "run_control*", "postprocessing*", "reporting*", "storage*", "common*", "solvers*"]
 
 [tool.setuptools.package-data]
 reporting = ["report_assets/*.js", "report_assets/*.css"]
