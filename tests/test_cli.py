@@ -63,6 +63,26 @@ class CliTests(unittest.TestCase):
         self.assertEqual(stdout, "")
         self.assertIn("多个同时匹配的 mapping", json.loads(stderr)["message"])
 
+    def test_validate_rejects_incomplete_native_mesh(self):
+        (self.case_path / "polyMesh" / "boundary").unlink()
+        code, stdout, stderr = self.invoke("list", "cases")
+        self.assertEqual(code, 0, stderr)
+        self.assertEqual(json.loads(stdout)[0]["id"], "shear-decay-2d")
+        code, stdout, stderr = self.validate()
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout, "")
+        self.assertIn("网格缺少 boundary", json.loads(stderr)["message"])
+        self.assertFalse((self.root / "runs").exists())
+
+    def test_validate_rejects_native_template_layout_without_rendering(self):
+        template = next((self.case_path / "templates").glob("*/template.yaml")).parent
+        (template / "setup.jou").write_text("{{ missing | real }}", encoding="utf-8")
+        code, stdout, stderr = self.validate()
+        self.assertEqual(code, 2)
+        self.assertEqual(stdout, "")
+        self.assertIn("0/constant/system", json.loads(stderr)["message"])
+        self.assertFalse((self.root / "runs").exists())
+
     def test_run_without_conditions_reports_missing_conditions(self):
         for condition in (self.case_path / "conditions").glob("*.yaml"):
             condition.unlink()
@@ -76,7 +96,7 @@ class CliTests(unittest.TestCase):
         results = [{"job_id": "job-a", "status": "SUCCEEDED"}, {"job_id": "job-b", "status": "CRASHED"}]
         with patch("simtest.prepare_job", return_value=(object(), object())), patch(
             "simtest.run_job", side_effect=results
-        ), patch("reporting.report.report", return_value={"report": "report.html"}) as report:
+        ), patch("report.report", return_value={"report": "report.html"}) as report:
             code, stdout, stderr = self.invoke(
                 "run", "shear-decay-2d", "--solver", "OpenFOAM@12", "--solver", "OpenFOAM@latest"
             )
@@ -88,7 +108,7 @@ class CliTests(unittest.TestCase):
     def test_prepare_only_does_not_generate_report(self):
         with patch("simtest.prepare_job", return_value=(object(), object())), patch(
             "simtest.run_job", return_value={"job_id": "prepared", "status": "QUEUED"}
-        ), patch("reporting.report.report") as report:
+        ), patch("report.report") as report:
             code, stdout, stderr = self.invoke("run", "shear-decay-2d", "--prepare-only")
         self.assertEqual(code, 0)
         self.assertEqual(stderr, "")

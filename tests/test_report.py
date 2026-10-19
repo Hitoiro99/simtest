@@ -1,15 +1,15 @@
 import copy
 import json
+import multiprocessing
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from storage.archive import manifest_digest
+from archive import archived_runs, manifest_digest
 from simtest import parser
 from common.io import atomic_json, inventory
-from reporting.report import archived_runs, report
-from reporting.report_html import build_charts, monitor_rows, render_html
+from report import build_charts, monitor_rows, render_html, report
 from solvers.exceptions import ConfigurationError, PostprocessError
 
 
@@ -29,6 +29,34 @@ def fixture():
     }
 
 
+def stored_fixture(root, job_id="job-a"):
+    path = root / "artifacts/example/runs/default/OpenFOAM/12" / job_id
+    path.mkdir(parents=True)
+    (path / "input").mkdir()
+    (path / "input" / "parameters.txt").write_text("fixed input", encoding="utf-8")
+    (path / "logs").mkdir()
+    (path / "logs" / "solver.log").write_text("End", encoding="utf-8")
+    (path / "normalized").mkdir()
+    (path / "normalized" / "monitors.csv").write_text("step,time,u\n0,0,1\n1,1,nan\n", encoding="utf-8")
+    atomic_json(path / "status.json", {"status": "SUCCEEDED"})
+    manifest = fixture()
+    manifest["job_id"] = job_id
+    manifest["case"]["id"] = "example"
+    manifest["input_sha256"] = inventory(path / "input")
+    manifest["fields"] = []
+    manifest["archive_integrity"] = {"files": inventory(path), "manifest_content_sha256": manifest_digest(manifest)}
+    atomic_json(path / "manifest.json", manifest)
+    return path
+
+
+def report_worker(root, queue):
+    try:
+        with patch("report.static_figures", return_value=[]):
+            queue.put(report(Path(root), "example", ["job-a"]))
+    except BaseException as exc:
+        queue.put({"error": repr(exc)})
+
+
 class ReportTests(unittest.TestCase):
     def test_invalid_last_and_sampling_axes_are_preserved(self):
         m = fixture()
@@ -40,6 +68,25 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(charts[0]["series"][0]["points"][1]["raw"], "nan")
         self.assertEqual(charts[1]["xlabel"], "Step")
         self.assertEqual(monitor_rows("example", runs)[0]["last_value"], "inf")
+
+    def test_latest_version_uses_solver_rule_without_installation(self):
+        runs = []
+        for version in ("2025R2", "2026R1", "2025R1"):
+            manifest = fixture()
+            manifest["job_id"] = "job-" + version
+            manifest["actual_solver"] = {"name": "Fluent", "version": version}
+            runs.append((Path("archive"), manifest, {"status": "SUCCEEDED"}))
+
+        def fluent_version(name, version):
+            self.assertEqual(name, "Fluent")
+            year, release = version.split("R")
+            return int(year), int(release)
+
+        with patch("report.version_key", side_effect=fluent_version) as comparator:
+            charts = build_charts(runs)
+        self.assertTrue(comparator.called)
+        self.assertEqual(len(charts), 1)
+        self.assertEqual([series["job_id"] for series in charts[0]["series"]], ["job-2026R1"])
 
     def test_field_comparisons_are_grouped_without_bridging_unavailable(self):
         m = fixture()
@@ -74,7 +121,7 @@ class ReportTests(unittest.TestCase):
         m["case"]["monitors"]["u"]["display_name"] = malicious
         status = {"status": "CRASHED", "diagnostics": [malicious]}
         runs = [(Path("archive"), m, status)]
-        charts = build_charts(runs)
+        charts = build_charts([(Path("archive"), m, {"status": "SUCCEEDED"})])
         page = render_html("example", "now", runs, charts, monitor_rows("example", runs), [], Path("report"))
         self.assertNotIn(malicious, page)
         self.assertIn("&lt;/script&gt;", page)
@@ -86,17 +133,12 @@ class ReportTests(unittest.TestCase):
     def test_report_checks_selection_integrity_and_outputs_html(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            archive = root / "artifacts/example/runs/default/OpenFOAM/12/job-a"
-            archive.mkdir(parents=True)
-            atomic_json(archive / "status.json", {"status": "SUCCEEDED"})
-            m = fixture()
-            m["archive_integrity"] = {"files": inventory(archive), "manifest_content_sha256": manifest_digest(m)}
-            atomic_json(archive / "manifest.json", m)
+            archive = stored_fixture(root)
             self.assertEqual(archived_runs(root, "example")[0]["job_id"], "job-a")
             with self.assertRaises(ConfigurationError):
                 report(root, "example", ["job-a", "missing"])
             self.assertFalse((root / "artifacts/example/reports").exists())
-            with patch("reporting.report.static_figures", return_value=[]):
+            with patch("report.static_figures", return_value=[]):
                 result = report(root, "example", ["job-a"])
             self.assertEqual(Path(result["report"]).suffix, ".html")
             self.assertTrue(Path(result["report"]).is_file())
@@ -106,6 +148,105 @@ class ReportTests(unittest.TestCase):
             atomic_json(archive / "status.json", {"status": "CRASHED"})
             with self.assertRaises(PostprocessError):
                 report(root, "example", ["job-a"])
+
+    def test_report_reuses_deduplicated_selection_and_refuses_corruption(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            stored_fixture(root)
+            with patch("report.static_figures", return_value=[]):
+                first = report(root, "example", ["job-a", "job-a"])
+                second = report(root, "example", ["job-a"])
+            self.assertEqual(first["report"], second["report"])
+            self.assertFalse(first["reused"])
+            self.assertTrue(second["reused"])
+            self.assertEqual(first["runs"], 1)
+            Path(first["report"]).write_text("corrupted", encoding="utf-8")
+            with self.assertRaises(PostprocessError):
+                report(root, "example", ["job-a"])
+
+    def test_report_uses_csv_instead_of_manifest_observations(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = stored_fixture(root)
+            manifest = json.loads((path / "manifest.json").read_text(encoding="utf-8"))
+            manifest["monitors"]["u"] = [{"step": 99, "time": 99, "value": 123456}]
+            manifest["comparisons"]["monitors"] = [{"monitor": "u", "reference_value": 999}]
+            manifest["condition"]["references"] = {
+                "reference-u": {"monitor": "u", "value": 1, "unit": "m/s", "reference_scale": {"value": 1, "unit": "m/s"}, "source": {"description": "analytic"}}
+            }
+            manifest["archive_integrity"]["manifest_content_sha256"] = manifest_digest(manifest)
+            atomic_json(path / "manifest.json", manifest)
+            before = (path / "manifest.json").read_bytes()
+            with patch("report.static_figures", return_value=[]):
+                result = report(root, "example")
+            summary = json.loads(Path(result["report"]).with_name("summary.json").read_text(encoding="utf-8"))
+            derived = summary["runs"][0]["manifest"]
+            self.assertEqual(derived["monitors"]["u"][-1]["step"], 1)
+            self.assertEqual(derived["comparisons"]["monitors"][0]["reference_value"], 1)
+            self.assertEqual(derived["comparisons"]["monitors"][0]["status"], "UNAVAILABLE")
+            self.assertEqual(before, (path / "manifest.json").read_bytes())
+
+    def test_terminal_failure_report_has_redacted_logs_without_fake_curves(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = root / "runs/job-a"
+            (path / "logs").mkdir(parents=True)
+            manifest = fixture()
+            manifest["case"]["id"] = "example"
+            atomic_json(path / "manifest.json", manifest)
+            atomic_json(path / "status.json", {"status": "CRASHED", "diagnostics": ["token=private-value"]})
+            (path / "logs/solver.log").write_text("api_key=private-value\nfailure details", encoding="utf-8")
+            with patch("report.static_figures", return_value=[]):
+                result = report(root, "example", ["job-a"])
+            page = Path(result["report"]).read_text(encoding="utf-8")
+            self.assertIn("CRASHED", page)
+            self.assertIn("failure details", page)
+            self.assertNotIn("private-value", page)
+            data = page.split('<script id="chart-data" type="application/json">')[1].split("</script>")[0]
+            self.assertEqual(json.loads(data), [])
+            atomic_json(path / "status.json", {"status": "QUEUED"})
+            with self.assertRaises(ConfigurationError):
+                report(root, "example", ["job-a"])
+            with self.assertRaises(ConfigurationError):
+                report(root, "example")
+
+    def test_report_selection_order_does_not_change_report_identity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            stored_fixture(root, "job-a")
+            stored_fixture(root, "job-b")
+            with patch("report.static_figures", return_value=[]):
+                first = report(root, "example", ["job-a", "job-b"])
+                second = report(root, "example", ["job-b", "job-a", "job-b"])
+            self.assertEqual(first["report"], second["report"])
+            self.assertTrue(second["reused"])
+            self.assertEqual(len(Path(first["report"]).parent.name), 64)
+
+    def test_concurrent_report_requests_publish_one_report(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            stored_fixture(root)
+            context = multiprocessing.get_context("fork")
+            queue = context.Queue()
+            workers = [context.Process(target=report_worker, args=(str(root), queue)) for _ in range(2)]
+            try:
+                for worker in workers:
+                    worker.start()
+                results = [queue.get(timeout=15) for _ in workers]
+                for worker in workers:
+                    worker.join(timeout=15)
+                    self.assertEqual(worker.exitcode, 0)
+                self.assertFalse(any("error" in result for result in results), results)
+                self.assertEqual(results[0]["report"], results[1]["report"])
+                self.assertEqual(sum(result["reused"] for result in results), 1)
+                reports = root / "artifacts/example/reports"
+                self.assertEqual(len([path for path in reports.iterdir() if path.is_dir()]), 1)
+            finally:
+                for worker in workers:
+                    if worker.is_alive():
+                        worker.terminate()
+                        worker.join()
+                queue.close()
 
     def test_list_runs_cli_and_repeated_job_ids(self):
         args = parser().parse_args(["list", "runs", "--case", "example"])

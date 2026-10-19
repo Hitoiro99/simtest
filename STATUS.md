@@ -18,28 +18,30 @@
 |---|---|---|
 | 案例、工况发现和参数解析 | 部分实现 | 类型、必填项、单位和派生变量已有；CLI 校验补齐默认执行参数并检查案例映射，零工况明确报错；通用取值范围约束未实现 |
 | 标签检索、案例依赖、通用取值范围约束 | 未实现 | 标签仅作为元数据保存 |
-| 求解器注册与版本选择 | 部分实现 | 注册机制已有；通用部署校验仍依赖 icoFoam/Foundation |
+| 求解器注册与版本选择 | 部分实现 | 注册、安装绑定和版本排序已集中于 solvers/registry.py，主程序与版本规则由 Adapter 提供；真实接入仍仅 OpenFOAM 12 |
 | OpenFOAM Foundation 12 接入 | 已实现 | 当前案例的串行及两进程 MPI；其他版本未完成真实验证 |
 | Fluent、StarCCM、AICFD 和结构求解器 | 未实现 | 尚未接入 |
-| 模板选择、继承与输入生成 | 部分实现 | 当前 OpenFOAM 路径可用；仍限定 0/constant/system |
-| 唯一源网格、复制哈希和 checkMesh | 已实现 | 当前 polyMesh 网格 |
+| 模板选择、继承与输入生成 | 部分实现 | 公共层已支持内核自有文件布局，继承叠加后一次渲染；原生目录由 Adapter 检查；真实接入仍仅 OpenFOAM 12，其他内核模板未完成真实验证 |
+| 唯一源网格、复制哈希和 checkMesh | 已实现 | 公共层发现唯一源资产；OpenFOAM Adapter 检查 polyMesh 必需文件，当前网格的复制哈希和 checkMesh 已验证 |
 | AICFD-NewPre 转换及多域核验 | 未实现 | 跨格式和完整多域链路未接入 |
 | Linux/WSL 本地执行 | 已实现 | 进入 Linux/WSL 后直接使用 python3 -m simtest，安装后也可用 simtest；保留日志、超时、取消和资源统计 |
 | 容器、集群调度及集成多作业调度 | 未实现 | 当前 CLI 按顺序组织多工况/多求解器作业 |
 | OpenMP/CUDA 求解后端 | 未实现 | 当前 Adapter 在启动前返回 UNSUPPORTED；MPI 已支持 |
-| 监控和残差 CSV 标准化 | 部分实现 | 当前 OpenFOAM 读取器保留采样边界和无效值；其他求解器读取器未接入 |
+| 监控和残差 CSV 标准化 | 部分实现 | OpenFOAM Adapter 内的方法负责解析与标准化，保留采样边界和无效值；版本类可重载，其他求解器读取器未接入 |
 | 场结果标准化 | 部分实现 | 当前单域、reference 所需场的全部输出时刻；多域同字段及张量未覆盖 |
 | 标量监控及解析场参考比较 | 已实现 | 当前案例仅配置速度场参考；输出误差，不作数值 PASS/FAIL 判定 |
 | 基线、性能及跨网格离散场比较 | 未实现 | 现有资源记录和曲线叠加不等于自动比较 |
-| HTML 交互与 JSON/CSV、静态图报告 | 部分实现 | 交互和各格式输出已有；当前从 manifest 取数，尚未满足文档的 CSV/VTU 读取要求 |
-| 报告直接读取归档 CSV/VTU | 未实现 | 当前使用已保存的监控与比较记录，不重算误差 |
-| 输入、日志、标准结果及元数据归档 | 已实现 | 校验哈希；成功后默认清理 work，失败保留现场 |
-| 运行副本清理与去重 | 部分实现 | runs 中的 input/logs/normalized 仍与归档重复 |
-| 硬件和资源信息 | 部分实现 | CPU、OS、MPI、进程/线程数、耗时和峰值内存已有；完整内存配置、GPU、配额及多节点信息待补 |
+| HTML 交互与 JSON/CSV、静态图报告 | 已实现 | 离线交互及各格式输出；成功归档 CSV/VTU 独立回读，失败状态与日志摘要入报，同一选集复用 |
+| 报告直接读取归档 CSV/VTU | 已实现 | 独立回读标准监控与全部验证场，使用归档参考定义重算报告偏差；串行/MPI 各 11 时刻通过，原归档不变 |
+| 输入、日志、标准结果及元数据归档 | 已实现 | 只发布成功且完整的不可变归档，校验标准文件可读性与清单哈希；失败现场保留在 runs |
+| 运行副本清理与去重 | 已实现 | 标准数据与归档双校验后移除整个工作区；同身份成功复用、准备校验接续、失败保留且不自动重试，损坏拒绝覆盖 |
+| 硬件和资源信息 | 部分实现 | 已记录主机指纹、CPU、OS、总内存、GPU 探测、MPI、亲和性、cgroup 与进程限制及实际耗时/峰值内存；多节点及容器真实验证未覆盖 |
 | 案例网格制备与报告测试归位 | 已实现 | 网格制备位于案例 mesh-preparation/；浏览器测试位于 tests/report/；空 tools/ 已移除 |
-| 平台代码按职责拆分 | 已实现 | 根目录 simtest.py 作为入口；run_control 的 install/environment/jobs 分别负责安装、环境和作业；其余职责目录同级，保持原 CLI 协议 |
+| 平台代码按职责拆分 | 已实现 | 按确认方案保留 case_management/common；求解器相关逻辑集中于 solvers，jobs/analysis/archive/report 位于根目录；旧目录已移除，安装版完整链路通过 |
 | 项目代码风格与可读性约定 | 已实现 | AGENTS.md 已记录用户最终入口样式；受维护的 Python、JavaScript/CJS、CSS 及测试已统一，复杂条件式展开，保留简单值选择及用户最终入口排版 |
 | 项目 AGENTS.md 工作规则 | 已实现 | 根目录文档维护目录、测试和 Linux/WSL 入口规则；solvers/ 位置保持不变 |
+| 稳定身份哈希与重复请求复用 | 已实现 | 完整规范身份 SHA-256，物理时间和输出设置参与；创建/耗时/生成路径等不参与；完整身份比对、同作业进程锁与归档/报告去重均通过回归 |
+
 
 ## 变更记录
 
@@ -132,3 +134,48 @@
 - 验证：WSL Ubuntu / Python 3.8.10 下 CLI 的 5 项相关测试和完整 25 项 unittest 全部通过，无跳过。七个搬移/重命名函数、作业准备及清单构建逻辑的 AST 对比通过；固定随机因子的作业 ID、身份和除创建时间/源码哈希外的元数据相同；五类异常各覆盖归档成功/失败，共十种状态、历史及诊断对比一致。
 - 验证：在隔离临时目录离线构建 wheel 并完成非 editable 安装，确认新模块、报告 JS/CSS、VTK 桥接均入包，旧 execution 及此前拆分包不入包；从源码目录外验证安装登记、模块及控制台入口、查询和校验。准备模式的 QUEUED、状态历史、无归档/报告及新目录源码哈希均通过；安装版串行和两进程 MPI 均为 SUCCEEDED，各有 11 个 VTU 时刻、参考比较和 HTML 报告，work 按原策略清理。
 - 验证：初次临时构建因系统旧 importlib_metadata 与打包工具冲突失败，改用临时 setuptools 自带依赖后构建及安装通过；未修改全局环境或项目依赖。Python 语法、新模块格式及最终差异检查通过；源输入、网格、追溯、固定样本、历史 runs/artifacts 及本机 config.yaml 共 1,427 个受保护文件哈希不变。本次未重跑浏览器交互，也未验证其他求解器或版本；临时工具、备份和验证工作区交付前清理。
+
+### 012｜2026-10-19｜划清案例管理与求解器原生检查职责
+
+- 操作：修改 `case_management/cases.py`，唯一源网格发现保留资产数量和类型检查，将 polyMesh 内部文件校验移入 `solvers/OpenFOAM/adapter.py` 的 validate_mesh()，由 validate() 调用。
+- 操作：修改 `case_management/templates.py`，提取 template_files() 共用继承文件清单及校验；保留符号链接、路径边界、禁止附带源网格和一次渲染约束，取消公共代码中的 OpenFOAM 目录硬编码。修改 `solvers/base.py`，增加可重载的 validate_template()；OpenFOAM Adapter 实现原生布局限制。修改 `simtest.py`，validate 共用模板文件检查，不渲染、不启动原生工具。
+- 操作：修改 `tests/test_core.py`、`tests/test_cli.py`，增加 8 项职责边界、其他内核模板布局、过滤器隔离、版本重载、继承一次渲染及安全回归；修改 `README.md`、`AGENTS.md` 的职责说明，更新本文件功能表并追加记录。新增、删除、移动/重命名受维护文件：无；未实施其他目录迁移。
+- 操作：修改代码前已执行 git add -A，将已有 AGENTS.md、README.md 改动及工作区状态保存到暂存区；本批修改留在工作区，未创建提交，保留用户已有文档改动。
+- 验证：WSL Ubuntu / Python 3.8.10 下修改前 25 项测试全部通过；修改后相关核心 18 项和完整 33 项 unittest 全部通过，无跳过。真实 OpenFOAM Foundation 12 的隔离工作区 validate、checkMesh 和 prepare-only 通过，准备状态停在 QUEUED，未启动求解或产生归档；现有案例的新旧模板物化文件及 SHA-256 一致。
+- 验证：未执行完整串行/MPI 求解、浏览器交互或重新打包；本次测试中的其他内核 Adapter 只用于公共模板边界验证，不代表接入了新求解器。
+- 验证：受影响的 7 个 Python 文件语法与风格检查、最终差异格式检查通过；需求文档、本机配置、案例源输入、固定样本及历史 runs/artifacts 共 1,530 个文件的 SHA-256 未变。历史操作记录完整保留；临时验证文件在交付前清理。
+
+### 013｜2026-10-19｜按需求职责归位并简化平台目录
+
+- 操作：将 run_control/install.py 的安装登记与选择、environment.py 的环境加载归入 solvers/registry.py，将工具定位和辅助命令执行归入 solvers/base.py；新增 Adapter 主程序归属检查，主程序标识、版本规则和环境白名单由对应 Adapter 提供。
+- 操作：迁移 run_control/jobs.py → jobs.py、postprocessing/analysis.py → analysis.py、storage/archive.py → archive.py；将归档查询归入 archive.py。合并 reporting/report.py 与 reporting/report_html.py → report.py；移动 reporting/report_assets/ → report_assets/，增加资源包初始化文件以支持安装后离线读取，JS/CSS 内容不变。
+- 操作：将 solvers/OpenFOAM/monitors.py、fields.py 中的读取逻辑归入 adapter.py 的 read_log/read_tables/read_monitors/output_times/read_fields 方法，删除两个旧辅助文件；移动 postprocessing/vtk_bridge.py → solvers/OpenFOAM/vtk_bridge.py，桥接脚本内容不变，版本类可重载读取方法。
+- 操作：同步 simtest.py、pyproject.toml、tests/test_core.py、tests/test_cli.py、tests/test_integration.py、tests/test_reader.py、tests/test_report.py，以及 cases/shear-decay-2d/mesh-preparation/create_example_mesh.py 的导入；新增 tests/test_registry.py，补充安装绑定、版本规则和环境隔离回归。更新本文件功能表并追加记录。修改前已执行 git add 保存上批改动，未创建提交。
+- 验证：WSL Ubuntu / Python 3.8.10 下完整 43 项 unittest 全部通过，无跳过；包含实际 pvpython 固定样本、原生导出回退、进程超时、归档损坏、CLI 与报告，以及新增版本方法重载和非 icoFoam 测试。测试内核仅验证公共协议，不代表已接入新求解器。
+- 操作：移除迁空的 run_control/、postprocessing/、storage/、reporting/ 及旧初始化文件和缓存；修改 README.md、AGENTS.md 的目录、职责及测试说明。后续代码收尾前再次执行 git add 保存 43 项测试通过的迁移检查点。
+- 操作：删除 run_control/{__init__.py,install.py,environment.py,jobs.py}、postprocessing/__init__.py、storage/__init__.py、reporting/__init__.py 等迁空旧文件；移动和合并的业务文件见本记录前述路径。新增文件为 report_assets/__init__.py、tests/test_registry.py；案例网格制备脚本仅更新导入，不重建网格。
+- 验证：中断后在最终目录上重新运行完整 43 项 unittest，全部通过且无跳过；旧模块路径在活动代码、测试、README 和 AGENTS 中已清除。18 个搬移函数的 AST 与原实现一致，五项读取算法在方法与路径映射后等价；analysis.py 与 vtk_bridge.py 内容不变。七份现有归档均通过完整性检查，图表、汇总行和 HTML 与迁移前一致。30 个 Python 文件语法和风格检查通过。
+- 验证：在临时目录获取构建工具后生成 wheel 并非 editable 安装，未修改全局环境或项目依赖；新根模块、离线资源及 VTK 桥接已入包，旧模块未入包。源码目录外的模块与控制台入口、setup/list/validate/prepare-only 均通过；普通导入不加载 VTK。安装版串行及两进程 MPI 均为 SUCCEEDED，各读取 11 个场时刻、生成 HTML 并按原策略清理 work；两作业合并报告正常。
+- 验证：第一次完整链路检查因会话中断停在场读取阶段，未记作通过；恢复辅助脚本初次缺少 shutil 导入，修正后在新的隔离工作区完成全部安装验证。Node 24 / Edge 对安装版合并报告完成 14 项交互检查，JavaScript 异常为 0，覆盖缩放、平移、图例、悬停、指标切换、全屏、SVG 导出及移动宽度。
+- 验证：恢复工作后记录的 1,530 个需求、配置、案例、样本及历史运行/归档文件哈希均保持不变；需求文档和原有归档无 Git 差异，案例目录仅网格制备脚本有已说明的导入调整。安装验证所用源码与最终工作区一致；暂存和工作区差异格式检查通过。临时工具、安装环境、求解目录、报告和截图在交付前清理。
+
+### 014｜2026-10-19｜稳定作业身份、去重与归档后清理
+
+- 操作：修改前执行 git add 保存上一批结构调整；修改 jobs.py，移除随机 nonce，使用完整规范化身份的 SHA-256，包含案例源文件、执行配置、实际求解器、代码、载体与环境指纹；创建时间、生成路径及运行后统计不参与身份。通过分配锁和每作业进程锁实现同身份单写，准备完成后可校验接续；相同失败状态不自动重试。
+- 操作：修改 simtest.py，按已确认方案移除 --keep-raw；完整运行调用新的作业接口。更新本文件功能表并追加本记录；归档、标准结果读取和报告部分正在同批整合。
+
+- 操作：补充实际主程序约束、等价超时数值规范化及 cgroup/进程资源限制指纹；MPI 分区产生的内部链接经边界检查后展开，保持严格输入/归档检查。
+- 验证：首轮完整 71 项通过；真实串行接续及工作区清理通过；首轮 MPI 被内部链接快照检查拒绝并保留现场，修正后将重新执行验证，不把该次记为通过。
+
+- 操作：将硬件身份中的内存改为内核 online 内存块容量，排除 WSL MemTotal 的运行期微小波动；补充准备模式篡改拒绝、清理拒绝不改变成功状态与等价超时参数回归。
+
+- 操作：修改 `archive.py`、`report.py`、`solvers/OpenFOAM/{adapter.py,vtk_bridge.py}`，新增 `tests/test_archive.py`、`tests/test_jobs.py`，修改 `tests/{test_core.py,test_reader.py,test_report.py}`；归档与报告分别增加独立读取、双校验、不可变发布和稳定复用，VTU 补存真实单元中心几何。同步 `README.md`、`AGENTS.md` 及本文件功能表。无目录迁移；移除 CLI --keep-raw。
+- 操作：按用户授权清空原 `runs/`、`artifacts/` 的旧作业与关联旧报告，并移除本轮修正前的中间验证数据；仅保留最终串行和两进程 MPI 两份归档、各自报告及一份汇总报告。未修改需求、源网格、物理配置、参考与固定样本。
+- 验证：最终 WSL Ubuntu / Python 3.8.10 全量 73 项测试全部通过，无跳过；覆盖同身份双进程单写、失败不重试、准备篡改、清理失败再清理、归档损坏拒绝和报告并发发布。
+- 验证：最终真实 OpenFOAM Foundation 12 串行与两进程 MPI 均 SUCCEEDED；MPI 从同一准备 ID 接续，分区、求解、全部时刻重构与归档读取通过。各有 11 个验证场时刻，成功后整个作业目录不存在；重复 CLI 均返回原 ID 和 reused=true，报告也复用原目录。串行 ID `afb280315a90f569b9160089cc6aa6c8f212e9008f0907a137402aaff05723cb`，MPI ID `183ad96059f9c30e6204212cefaff8ec044e429aba74483792f22051b300488b`。
+- 验证：35 个需求、配置、案例及固定样本文件 SHA-256 未变，历史操作记录未覆盖。本次不代表新增其他求解器、跨节点/容器或性能基准能力；未重新构建安装包。
+
+- 验证：首轮浏览器前 13 项交互正常，390px 宽度检查发现 64 位作业 ID 导致文本溢出；修改 `report_assets/report.css` 允许长文本换行，随后重检。
+
+- 验证：长 ID 换行修复后，最终串行/MPI 又各执行一次并保留，重复 CLI 再次均 reused=true；最终串行 ID `e8704a74c7652fa10652f77112ca01b03f3fe817e371f1545b49ed2ca69966ac`，MPI ID `3275c1b2748dfbdbbc911c0f70ce0bb7dbe6cce0dc3ac657091f0738605dea4e`。本记录前述两 ID 属于样式修复前验证，相关中间数据已按授权移除。最终保留 2 份成功归档及 3 份不同选集报告，无 runs 作业目录；根 .lock 为并发协调文件。
+- 验证：Node 24 / Edge 对最终汇总 HTML 完成全部 14 项交互检查，JavaScript 错误为 0，包含缩放、平移、图例、悬停、指标选择、筛选、全屏、SVG 导出及 390px 宽度；修复前一次窄屏失败已如实记录。最终 diff 格式检查通过，临时快照与浏览器截图交付前清理；按规则 git add 暂存，不创建提交。

@@ -93,6 +93,12 @@ def export(grid, spec, time, output, domain):
             scalar_array(spec["canonical"] + "_magnitude", [math.sqrt(sum(v * v for v in row)) for row in values])
         )
     clean.GetCellData().AddArray(scalar_array("cell_volume", [g[1] for g in geo]))
+    centers = vtk.vtkDoubleArray()
+    centers.SetName("cell_center")
+    centers.SetNumberOfComponents(3)
+    for entry in geo:
+        centers.InsertNextTuple(entry[0])
+    clean.GetCellData().AddArray(centers)
     ids = vtk.vtkIdTypeArray()
     ids.SetName("original_cell_id")
     for g in geo:

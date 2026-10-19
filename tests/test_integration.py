@@ -7,12 +7,11 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from storage.archive import archive, verify_archive
-from run_control.environment import load_env
+from archive import archive, verify_archive
+from solvers.registry import load_env
 from common.io import atomic_json, inventory
 from solvers.exceptions import PostprocessError, SolverCrashError
 from solvers.OpenFOAM.adapter import OpenFOAMAdapter
-from solvers.OpenFOAM.fields import normalize_fields
 from solvers.base import supervise as real_supervise
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,7 +61,7 @@ class IntegrationTests(unittest.TestCase):
                 return real_supervise(command, *args, **kwargs)
 
             with patch("solvers.base.supervise", side_effect=unavailable_native):
-                data = normalize_fields(context, adapter)
+                data = adapter.read_fields(context)
             self.assertEqual(context.manifest["field_reader"]["mode"], "exchange")
             self.assertEqual(len(data), 2)
             self.assertEqual([entry["cells"] for entry in data], [128, 128])

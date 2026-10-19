@@ -6,9 +6,9 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from run_control.environment import find_tool, load_env
+from solvers.registry import load_env
 from common.io import atomic_json, inventory, sha256
-from solvers.base import supervise
+from solvers.base import find_tool, supervise
 from solvers.models import Command
 
 

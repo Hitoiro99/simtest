@@ -11,12 +11,9 @@
 - [目录与运行流程](#目录与运行流程)：各部分职责。
 - [首次配置与排错](#首次配置与排错)：其他机器部署、Linux 和 WSL 常见提示。
 
-现有报告可直接用浏览器打开：
+报告由实际运行自动生成，路径会显示在命令输出中；也可使用 `report` 汇总已保存作业。
 
-| 报告 | 作业范围 |
-|---|---|
-| [正式验证 HTML](artifacts/shear-decay-2d/reports/20261013T080759Z-d8ae69e0/report.html) | 正式串行与两进程 MPI，共 2 次 |
-| [后续运行 HTML](artifacts/shear-decay-2d/reports/20261013T081125Z-47ae3c03/report.html) | 用户后续运行，共 4 次 |
+[本次串行与 MPI 汇总报告](artifacts/shear-decay-2d/reports/4c5099481d397bc2c72b5f1a526297c95df3f674c0fee5ad1730822fce759e1b/report.html) 包含本次修改完成后保留的两份验证归档。
 
 ## 日常使用
 
@@ -56,12 +53,13 @@ python3 -m simtest run shear-decay-2d
 
 # 两个 MPI 进程；自动分区并重构全部已保存时刻
 python3 -m simtest run shear-decay-2d --processes 2
-
-# 调试时保留求解器原生结果
-python3 -m simtest run shear-decay-2d --keep-raw
 ~~~
 
-每次运行创建独立作业 ID 和目录，不覆盖已有作业。默认在标准化检查及归档完整性检查均成功后清理该作业的 `work/`；失败时保留原生结果。
+作业 ID 是完整运行身份的 64 位 SHA-256。同身份重复命令会校验并复用已有成功归档，返回 `reused: true`，不重新求解。不同身份使用独立工作区；同身份并发请求等待文件锁后复用，避免重复计算。标准结果和归档均校验成功后，删除整个 `runs/作业ID/`，日志、输入和标准结果只保留在归档中。失败或校验未完成时保留现场，重复请求返回原失败，不自动重试。
+
+身份包含案例与工况、全部源输入（含模拟起止时间、步长、计算步数和输出设置）、实际求解器版本及构建、执行参数、硬件/载体、环境指纹和平台执行代码。创建时间、实际耗时、随机数、生成的工作目录及运行后统计不参与判重。`manifest.json` 保存完整身份及追溯信息。修改文档不影响身份；修改执行代码或物理输入会产生新身份。
+
+`reused` 的耗时是原计算记录，不能当成本次性能测量。损坏归档拒绝复用和覆盖，须恢复完整数据后再处理。
 
 只准备输入、暂不计算：
 
@@ -69,7 +67,7 @@ python3 -m simtest run shear-decay-2d --keep-raw
 python3 -m simtest run shear-decay-2d --prepare-only
 ~~~
 
-此时输出 `QUEUED` 表示准备完成，**没有后台队列继续运行**，也没有已归档结果可生成报告。要实际计算，重新执行不带 `--prepare-only` 的 `run`，将创建新作业。
+此时输出 `QUEUED` 表示准备完成，**没有后台队列继续运行**，也没有已归档结果可生成报告。要实际计算，重新执行相同参数、不带 `--prepare-only` 的 `run`，校验输入和工作区快照后接续同一作业；若该身份已成功归档，则直接复用。
 
 需要调整超时：
 
@@ -85,16 +83,15 @@ python3 -m simtest run shear-decay-2d --timeout 300 --heartbeat-timeout 120
 # 查看已归档作业的真实 ID、工况、进程数、状态和时间
 python3 -m simtest list runs --case shear-decay-2d
 
-# 汇总两次正式验证；这两个 ID 已在当前仓库保留
-python3 -m simtest report shear-decay-2d --job-id 0049661a44a93dfc51bb3ff1 --job-id 0b80aa28a4cb5fe15eb630ca
+# 选择具体作业时，在命令后追加 --job-id 和上面查到的真实 ID
 
-# 汇总本案例当前保留的全部归档（包含失败作业）
+# 汇总本案例的成功归档和 runs 中保留的终态失败作业
 python3 -m simtest report shear-decay-2d
 ~~~
 
-`report` 只读取并校验归档，不启动求解器。可以重复指定 `--job-id` 选取多次作业。选择同一目的、可比较的运行集合，避免混合不同开发阶段的结果。
+`report` 从归档 CSV/VTU 独立读取观测数据，使用归档中的参考定义计算报告，不启动求解器，也不修改归档。同一选集与相同报告代码复用同一报告目录；重复 ID 自动去重。可重复指定 `--job-id` 选取不同作业。选择同一目的、可比较的运行集合，避免混合不同开发阶段的结果。
 
-**不要原样输入 `<job-id>`。** 它是说明中的占位符，尖括号在 shell 中有特殊含义。请用 `list runs` 输出中的真实 ID 替换，像上面示例那样直接填写。
+**不要原样输入 `<job-id>`。** 它是说明中的占位符，尖括号在 shell 中有特殊含义。请用 `list runs` 输出中的真实 ID 替换，直接填写，不带尖括号。
 
 ### 4. 打开最新报告(待添加新功能)
 
@@ -114,7 +111,7 @@ PY
 
 使用浏览器打开输出的 HTML 文件。原生 Linux 图形环境可使用文件管理器打开；WSL 中的 `/mnt/c/...` 对应 Windows 的 `C:\...`，可在 Windows 文件资源管理器中双击 `report.html`。也可在 WSL 执行 `explorer.exe .` 打开当前工程目录，再进入 `artifacts/shear-decay-2d/reports/`。
 
-## 报告查看
+## 报告怎么看
 
 HTML 的图表数据、样式和交互脚本全部内嵌，**无需联网、无需启动 Web 服务**。
 
@@ -148,6 +145,7 @@ report.html     浏览器阅读与交互入口
 summary.csv     监控末条记录与比较数据，包含完整 job_id
 summary.json    完整作业元数据、全部比较、单位、来源和诊断
 figures/        默认视图的 PNG、SVG、PDF
+integrity.json  报告产物完整性清单
 ~~~
 
 单独复制 HTML 仍可交互查看内嵌数据；要使用下载和来源链接，应保留报告同目录文件及其相对归档路径。三维场可用 ParaView 打开归档中的 `normalized/fields/fields.pvd`。
@@ -160,20 +158,26 @@ figures/        默认视图的 PNG、SVG、PDF
 | `config.yaml` | 本机求解器安装路径和环境配置 | 首次配置后由平台读取 |
 | `cases/` | 案例物理定义、工况、模板、网格与参考解 | 所有计算的源输入 |
 | `cases/<case-id>/mesh-preparation/` | 案例专属的源网格制备脚本和配置 | 显式制备网格时 |
-| `case_management/` | `cases.py` 读取案例/工况；`templates.py` 选择、继承并物化模板 | 校验及准备阶段 |
-| `solvers/` | Adapter、进程监督、OpenFOAM 执行及结果读取 | 网格预处理、求解、后处理 |
-| `run_control/` | `install.py` 登记和选择已有安装；`environment.py` 加载环境及执行辅助命令；`jobs.py` 创建作业并组织各阶段 | setup / validate / run |
-| `postprocessing/` | `analysis.py` 计算参考偏差；`vtk_bridge.py` 由 pvpython 独立执行场标准化 | 求解之后 |
-| `reporting/` | `report.py` 组织报告；`report_html.py` 与 `report_assets/` 生成 HTML、图表及 CSV / JSON | run 结束或 report 命令 |
-| `storage/` | `archive.py` 检查标准文件、校验归档哈希并控制原生数据清理 | 作业收尾及报告读取 |
+| `case_management/` | 公共案例/工况/参数解析、唯一源网格发现；模板选择、继承、安全检查与一次渲染 | 发现、校验及准备阶段 |
+| `solvers/` | 注册与安装绑定、环境加载、公共进程执行，以及 Adapter 的原生输入、网格、监控和场处理 | setup、校验、准备、求解、后处理 |
+| `jobs.py` | 创建作业、记录版本和硬件追溯信息、管理状态并依次调用 Adapter 各阶段 | run |
+| `analysis.py` | 使用统一公式计算监控及解析场参考偏差 | 标准化完成后 |
+| `archive.py` | 查询归档、检查标准文件和哈希、保存归档并控制工作区清理 | 作业收尾及 list runs / report |
+| `report.py`、`report_assets/` | 汇总报告、HTML 交互、静态图及 CSV / JSON；资源支持安装后离线读取 | run 结束或 report 命令 |
 | `common/` | 文件操作、表达式、单位换算与平台版本；不主动启动求解 | 各业务模块复用 |
-| `cases/` | 案例物理定义、工况、模板、网格与参考解 | 所有计算的源输入 |
-| `runs/` | 每次运行的输入快照、工作区、日志和状态 | 计算、失败排查 |
+| `runs/` | 活动、准备和失败作业的工作区；成功归档后整目录移除 | 计算、失败排查 |
 | `artifacts/` | 经校验的结果归档和派生报告 | 长期留存、比较、阅读 |
 | `tests/` | 单元、Reader 及集成回归测试 | 修改代码后验证 |
 | `tests/report/` | HTML 报告的浏览器交互回归 | 开发或专项检查 |
 
-`simtest.py` 只负责命令入口；各同级业务目录使用轻量 Python 包组织导入。`solvers/` 继续独立保存内核行为，`cases/` 保存物理输入，`runs/` 和 `artifacts/` 保存数据。目录拆分不改变命令、数值定义及历史归档格式。
+`simtest.py` 负责命令入口；根目录 jobs、analysis、archive、report 对应作业组织、分析器、产物库和报告器。`case_management/`、`common/` 保留已有公共能力，`solvers/` 集中求解器相关行为；不再分别建立运行控制、后处理、存储和报告代码目录。`cases/` 保存物理输入，`runs/` 和 `artifacts/` 保存数据；归档按案例 / 工况 / 内核 / 实际版本 / 稳定作业 ID 组织。
+
+`solvers/registry.py` 登记和选择本机已有安装，使用 Adapter 的主程序标识与版本比较规则；`base.py` 统一进程监督及辅助执行。OpenFOAM Adapter 的 `read_log()`、`read_tables()`、`read_monitors()`、`output_times()` 和 `read_fields()` 处理原生结果，`postprocess()` 通过实例方法调用，版本类可以只重载发生变化的部分。`vtk_bridge.py` 位于对应内核目录，由独立 pvpython 执行，平台 Python 不直接加载 VTK。
+
+`case_management/` 处理公共语义，不规定 OpenFOAM、Fluent 等内核的原生目录。`templates.py` 的 `template_files()` 供 `validate` 和实际物化共用：先拒绝符号链接及模板内附带的源网格，再调用当前 Adapter 的 `validate_template()` 检查原生布局，最后叠加文件；物化时只渲染最终文件一次。OpenFOAM 的 `0/constant/system` 限制位于对应 Adapter，版本类可重载。
+
+`cases.py` 的 `mesh_asset()` 只发现唯一源资产并检查文件/目录类型；`polyMesh` 的 points、faces、owner、neighbour、boundary 由 OpenFOAM Adapter 的 `validate_mesh()` 检查。因此 `list cases` 用于发现案例；原生网格不完整时由 `validate` 和准备阶段报错。`validate` 检查模板布局和源网格结构，不渲染文件或启动原生工具；`run --prepare-only` 才会物化输入并执行原生预检及 checkMesh。
+
 
 运行顺序：
 
@@ -187,13 +191,13 @@ figures/        默认视图的 PNG、SVG、PDF
   → 标准化监控和参考解所需场
   → 按实际物理时刻计算解析偏差
   → 校验标准结果、保存归档、校验哈希
-  → 按保留策略清理 work/
+  → 两项校验通过后删除整个 runs/作业ID/
   → 生成 HTML 报告
 ~~~
 
-场读取优先原生 OpenFOAM Reader，能力不满足时尝试 `foamToVTK`。本例归档速度、各分量、模长、体积和追溯 ID，压力等未用于参考比较的场不额外归档。
+场读取优先原生 OpenFOAM Reader，能力不满足时尝试 `foamToVTK`。本例归档速度、各分量、模长、体积、真实单元中心坐标和追溯 ID，压力等未用于参考比较的场不额外归档。
 
-标准监控表采用 `step,time,各监控量` 的宽表。不同监控的采样位置留空。报告使用归档中的监控与比较结果，之后修改案例公式不会重算旧归档。
+标准监控表采用 `step,time,各监控量` 的宽表。不同监控的采样位置留空。报告读取归档 CSV/VTU 并使用归档参考定义计算偏差；之后修改源案例公式不会改写旧归档或改变旧身份的参考定义。
 
 ## 首个案例：shear-decay-2d
 
@@ -240,14 +244,16 @@ python3 -m simtest setup --solver OpenFOAM --version 12 \
 | 现象 | 判断 / 处理 |
 |---|---|
 | `No module named simtest` | 确认已进入 Linux / WSL 的工程根目录，并使用正确的 Python 环境；按首次配置说明安装项目。 |
-| 命令中的作业 ID 报错 | 不输入尖括号占位符，用 `list runs` 的真实 ID，见前面的双作业示例。 |
+| 命令中的作业 ID 报错 | 不输入尖括号占位符，用 `list runs` 的真实 ID，按 `list runs` 输出填写。 |
 | WSL 提示 localhost 代理未镜像 | 来自 WSL 的代理提示。若已正常返回结果，不表示案例识别失败。本地仿真和离线报告无需外网。 |
 | 只列出一个案例 / 一个版本 | 当前仓库只提供一个示例案例和 Foundation 12 Adapter，属于预期。 |
 | prepare-only 返回 QUEUED | 输入已准备，未启动求解；重新执行普通 run 进行计算。 |
 | report 提示未归档 | 用 `list runs` 查找真实归档 ID；仅准备的作业无法生成结果报告。 |
-| report 提示哈希不匹配 | 归档文件被修改或局部删除；恢复完整归档或重新运行，不要修改清单掩盖损坏。 |
+| report 提示哈希不匹配 | 归档文件被修改或局部删除；恢复完整归档；相同身份不会覆盖损坏归档，不要修改清单掩盖损坏。 |
 
 ### 当前能力边界
+
+当前 OpenFOAM Adapter 的主程序为 `icoFoam`；模板指定其他 application 时明确拒绝，须在 Adapter 中登记并纳入身份指纹后才能接入。
 
 已验证 Foundation 12、单流体域、同格式 polyMesh、层流瞬态、serial 后端及 MPI。OpenMP / CUDA 在运行前返回 `UNSUPPORTED`。
 
@@ -263,10 +269,11 @@ AICFD-NewPre 当前未安装。CGNS / MSH 跨格式路径明确返回 `MeshConve
 python3 -m unittest discover -s tests -v
 ~~~
 
-当前 25 项测试通过，覆盖 CLI 默认参数和映射校验、工况选择、失败作业报告、准备模式、参数与单位、模板、受限表达式、版本规则、监控边界与坏值、矢量误差、归档损坏、失败数据保留、进程组超时、原生 Reader 与导出回退，以及 HTML 报告分组和安全嵌入。
+测试覆盖公共模板布局、Adapter 读取方法重载、非 icoFoam 安装绑定、自定义版本排序及环境隔离，覆盖 CLI 默认参数和映射校验、工况选择、失败作业报告、准备模式、参数与单位、模板、受限表达式、版本规则、监控边界与坏值、矢量误差、归档损坏、失败数据保留、进程组超时、原生 Reader 与导出回退，以及 HTML 报告分组和安全嵌入。
 
 另提供可选浏览器回归脚本（Node 22+，默认使用 Windows 已安装的 Edge）。这项检查在 **Windows PowerShell 的工程根目录** 单独执行，平台运行命令仍在 Linux / WSL 执行：
 
 ~~~powershell
-node .\tests\report\check_html_report.cjs .\artifacts\shear-decay-2d\reports\20261013T080759Z-d8ae69e0\report.html
+# 将路径替换为本次命令输出的 report.html 实际路径
+node .\tests\report\check_html_report.cjs "报告的实际路径"
 ~~~

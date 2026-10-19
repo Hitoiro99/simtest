@@ -55,8 +55,30 @@ def choose(case_path, adapter):
     return chain(selected[0])
 
 
+def template_files(chain, adapter):
+    """返回继承叠加后的相对路径到源文件映射；执行公共安全和 Adapter 原生布局校验，不渲染。"""
+    merged = {}
+    for entry in chain:
+        for file in sorted(entry["_path"].rglob("*")):
+            if file.is_symlink():
+                raise ConfigurationError("模板不允许符号链接")
+            if not file.is_file():
+                continue
+            relative = file.relative_to(entry["_path"])
+            if relative.as_posix() == "template.yaml":
+                continue
+            if any(part in ("mesh.cgns", "mesh.msh", "polyMesh") for part in relative.parts):
+                raise ConfigurationError("模板不能另带网格")
+            adapter.validate_template(relative)
+            merged[relative] = file
+
+    return merged
+
+
 def materialize(context, adapter):
+    """使用已选 Adapter 的过滤器一次渲染最终模板，仅写入本作业 input 并记录哈希。"""
     chain = choose(context.case_path, adapter)
+    merged = template_files(chain, adapter)
     environment = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False, keep_trailing_newline=True)
     environment.filters.clear()
     environment.filters.update(adapter.template_filters())
@@ -69,22 +91,6 @@ def materialize(context, adapter):
         solver={"name": context.info.name, "version": context.info.version, "adapter_version": adapter.version},
         condition={"id": context.condition_id},
     )
-
-    merged = {}
-    for entry in chain:
-        for file in sorted(entry["_path"].rglob("*")):
-            if file.is_symlink():
-                raise ConfigurationError("模板不允许符号链接")
-            if not file.is_file():
-                continue
-            relative = file.relative_to(entry["_path"])
-            if relative.as_posix() == "template.yaml":
-                continue
-            if relative.parts[0] not in ("0", "constant", "system"):
-                raise ConfigurationError("OpenFOAM 原生模板文件须位于 0/constant/system")
-            if "polyMesh" in relative.parts:
-                raise ConfigurationError("模板不能另带网格")
-            merged[relative] = file
 
     context.input.mkdir(parents=True, exist_ok=False)
     for relative, file in merged.items():

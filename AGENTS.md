@@ -8,25 +8,26 @@ Applies repository-wide. Subdirectory `AGENTS.md` requirements are additive and 
 - 本工程是 Python 自动测试平台，由外部求解器计算。工作规则不代表功能已经实现；使用说明见 README.md，功能状态见 STATUS.md。
 - 对于代码部分的修改，修改前先向用户给出可行性方案，待用户修改确定后再进行修改。
 - 控制任务范围，保留用户已有改动，复用已有抽象，不进行无关重构或擅自实施目录方案。
+- 处理顺序固定为：复用已有实现 → 补充规定模块 → 必要时新增辅助实现。不能为了目录对称、套用设计模式或提前预留功能而增加模块。
 
 ## 2. 仓库布局
 
 - simtest.py：根目录 CLI 入口，解析参数并调用业务模块；保持 python3 -m simtest 和已安装 simtest 命令。
-- case_management/：案例、工况解析和模板物化。
-- run_control/：install.py 登记和选择已有安装；environment.py 加载环境、定位工具及执行辅助命令；jobs.py 创建作业、收集追溯信息并控制运行流程。
-- postprocessing/：参考分析和独立 pvpython 场标准化桥接；reporting/：报告及 report_assets/ 离线资源。
-- storage/：归档、完整性校验和清理边界；common/：公共文件、单位、表达式及版本工具。
-- solvers/：受信 Python 包，保存基类、注册器、模型、异常和各内核 Adapter；不得擅自迁入其他包。 
-- solvers/<solver>/adapter.py和solvers/<solver>/versions/：内核公共行为及稀疏版本变更点，不保存具体案例物理参数。 
-- cases/<case-id>/：案例、唯一源网格、conditions、references、templates；不写入运行生成物。 
-- config.yaml：setup 创建并忽略提交的本机部署配置，不配置 Adapter 继承、固有能力或版本比较规则。 
-- runs/<job-id>/：独立工作区，保存 input、work、logs、normalized 和状态，不同作业不得共享写入路径。 
-- artifacts/<case-id>/：按工况/内核/实际版本/作业 ID 保存不可变归档，reports 保存派生报告。 
+- case_management/：公共案例、工况、参数解析，唯一源网格发现及模板选择、继承和渲染；不维护求解器原生文件布局和网格内部规则。
+- jobs.py：创建独立作业、收集追溯信息、记录状态并组织完整运行流程；analysis.py：公共参考偏差与误差统计。
+- archive.py：标准结果校验、归档查询、完整性校验和清理边界；report.py：跨作业报告、图表和汇总输出；report_assets/：可安装的离线 JS/CSS 资源包。
+- common/：公共文件、单位、表达式及平台版本工具，不保存求解器固有规则。
+- solvers/：受信 Python 包；base.py 保存公共进程监督、工具定位与短命令执行，registry.py 保存注册、环境加载与安装绑定，models.py 与 exceptions.py 保存公共数据和异常；不得擅自迁入其他包。
+- solvers/<solver>/adapter.py 和 versions/：内核公共行为及稀疏版本变更点；监控解析、场获取和导出回退由 Adapter 方法实现，版本类按变化重载，不保存具体案例物理参数。OpenFOAM/vtk_bridge.py 使用独立 pvpython 读取并写出验证场。
+- cases/<case-id>/：案例、唯一源网格、conditions、references、templates；不写入运行生成物。
+- config.yaml：setup 创建并忽略提交的本机部署配置，不配置 Adapter 继承、固有能力或版本比较规则。
+- runs/<job-id>/：稳定身份对应的独立工作区，保存 input、work、logs、normalized 和状态；同身份仅一写者，成功归档并通过双重校验后移除整个工作区，失败保留现场，不自动重试。
+- artifacts/<case-id>/：按工况/内核/实际版本/稳定作业 ID 保存不可变归档；同身份须校验后复用，损坏拒绝覆盖；reports 保存按选集和生成代码去重的派生报告。
 - tests/：受控测试及固定样本；tests/report/ 保存报告浏览器交互回归。案例专属网格制备脚本和定义放在 cases/<case-id>/mesh-preparation/，不把 fixtures 或网格追溯证据当缓存删除。
 - pyproject.toml：Python 依赖、打包和 CLI 入口配置；先进入 Linux/WSL，再使用 python3 -m simtest 或同一环境中已安装的 simtest 命令。
-- README.md、STATUS.md：使用说明、最新功能状态与追加式操作记录。 
+- README.md、STATUS.md：使用说明、最新功能状态与追加式操作记录。
 
-Adapter 保存如何运行内核，案例模板保存如何设置物理问题，二者不重复实现职责。目录迁移必须有明确任务授权。
+Adapter 保存如何运行内核，案例模板保存如何设置物理问题，二者不重复实现职责。公共模板层保留路径安全、禁止附带源网格和一次渲染约束；原生模板布局由 Adapter.validate_template() 检查，OpenFOAM 的网格内部结构由 validate_mesh() 检查，版本类可按实际变化重载。目录迁移必须有明确任务授权。
 
 ## 3. 环境与测试
 

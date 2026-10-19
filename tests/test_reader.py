@@ -8,6 +8,10 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
+
+from solvers.OpenFOAM.adapter import OpenFOAMAdapter
+from solvers.exceptions import FieldParseError
 
 ROOT = Path(__file__).resolve().parents[1]
 PVPYTHON = Path("/opt/paraviewopenfoam510/bin/pvpython")
@@ -59,7 +63,7 @@ class ReaderRegression(unittest.TestCase):
                 [
                     str(PVPYTHON),
                     "--force-offscreen-rendering",
-                    str(ROOT / "postprocessing" / "vtk_bridge.py"),
+                    str(ROOT / "solvers" / "OpenFOAM" / "vtk_bridge.py"),
                     str(file),
                 ],
                 check=True,
@@ -83,6 +87,7 @@ class ReaderRegression(unittest.TestCase):
                         "velocity_z",
                         "velocity_magnitude",
                         "cell_volume",
+                        "cell_center",
                         "original_cell_id",
                     },
                 )
@@ -94,3 +99,74 @@ class ReaderRegression(unittest.TestCase):
                         # decoder fidelity bound, not a numerical acceptance threshold.
                         self.assertTrue(math.isclose(value, expected, rel_tol=2e-7, abs_tol=1e-12), (value, expected))
             self.assertLess(datasets[1]["samples"][64]["value"][0], datasets[0]["samples"][64]["value"][0])
+
+
+class AdapterReaderOverrides(unittest.TestCase):
+    def test_monitor_reader_uses_version_log_and_table_methods(self):
+        calls = []
+
+        class VersionAdapter(OpenFOAMAdapter):
+            def read_log(self, path):
+                calls.append("log")
+                return [1.0], {"residual:Ux": {(1, 1.0): 0.125}}, []
+
+            def read_tables(self, work):
+                calls.append("tables")
+                return {"flow": {1.0: 2.5}}, []
+
+            def dictionary(self, context, path, entry=None, keywords=False):
+                calls.append(entry)
+                return "0;"
+
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            context = SimpleNamespace(
+                run_dir=directory, work=directory / "work", input=directory / "input",
+                normalized=directory / "normalized", manifest={},
+                case={"monitors": {"residual:Ux": {}, "flow": {}}},
+            )
+            records, warnings = VersionAdapter().read_monitors(context)
+            self.assertEqual(calls, ["log", "tables", "startTime"])
+            self.assertEqual(records["residual:Ux"][0].value, 0.125)
+            self.assertEqual(records["flow"][0].value, 2.5)
+            self.assertEqual(records["flow"][0].step, 1)
+            self.assertEqual(context.manifest["solver_time_axis"], {"start": 0.0, "steps": [1.0]})
+            self.assertEqual(warnings, [])
+            self.assertEqual((context.normalized / "monitors.csv").read_text().splitlines(),
+                             ["step,time,residual:Ux,flow", "1,1.0,0.125,2.5"])
+
+    def test_field_reader_uses_version_output_time_method(self):
+        class VersionAdapter(OpenFOAMAdapter):
+            def output_times(self, context):
+                raise FieldParseError("version-specific time metadata")
+
+        context = SimpleNamespace(condition={"references": {"reference": {"field": "velocity"}}})
+        with self.assertRaisesRegex(FieldParseError, "version-specific time metadata"):
+            VersionAdapter().read_fields(context)
+
+    def test_postprocess_uses_version_reader_methods_after_reconstruction(self):
+        calls = []
+        warning = {"kind": "invalid", "monitor": "flow"}
+        datasets = [{"field": "velocity"}]
+
+        class VersionAdapter(OpenFOAMAdapter):
+            def native(self, context, tool, args, label, case_path=None):
+                calls.append(tool)
+
+            def read_monitors(self, context):
+                calls.append("monitors")
+                record = SimpleNamespace(step=1, time=1.0, value=2.5, quality="valid")
+                return {"flow": [record]}, [warning]
+
+            def read_fields(self, context):
+                calls.append("fields")
+                return datasets
+
+        context = SimpleNamespace(execution={"processes": 2}, diagnostics=[], manifest={}, normalized=Path("normalized"))
+        result = VersionAdapter().postprocess(context)
+        self.assertEqual(calls, ["reconstructPar", "monitors", "fields"])
+        self.assertEqual(context.diagnostics, [warning])
+        self.assertEqual(context.manifest["monitors"]["flow"],
+                         [{"step": 1, "time": 1.0, "value": 2.5, "quality": "valid"}])
+        self.assertEqual(result.diagnostics["fields"], datasets)
+        self.assertEqual(result.warnings, [warning])

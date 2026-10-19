@@ -8,13 +8,44 @@ import os
 import queue
 import re
 import signal
+import shutil
 import subprocess
 import threading
 import time
 from pathlib import Path
 
-from .exceptions import CancelledError, ConfigurationError, SolverCrashError, SolverTimeoutError
+from .exceptions import (
+    CancelledError,
+    ConfigurationError,
+    PreprocessError,
+    SolverCrashError,
+    SolverTimeoutError,
+    VersionMismatchError,
+)
 from .models import StageResult
+
+
+def find_tool(name, environment):
+    """从指定环境的 PATH 返回工具绝对路径；不存在时抛出 ConfigurationError。"""
+    path = shutil.which(name, path=environment.get("PATH"))
+    if not path:
+        raise ConfigurationError("缺少可执行文件: " + name)
+    return str(Path(path).resolve())
+
+
+def run_capture(argv, environment, cwd=None, timeout=30):
+    """在指定环境执行辅助命令并返回文本；timeout 以秒计，非零退出抛出 PreprocessError。"""
+    if cwd:
+        working_directory = str(cwd)
+    else:
+        working_directory = None
+    result = subprocess.run(
+        argv, cwd=working_directory, env=environment, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout
+    )
+    output = result.stdout.decode("utf-8", "replace")
+    if result.returncode:
+        raise PreprocessError("命令失败 %s: %s" % (argv[0], output[-3000:]))
+    return output
 
 
 def redact(text):
@@ -169,6 +200,18 @@ def supervise(command, log, heartbeat=None):
 
 
 class SolverAdapter(ABC):
+    main_executable = None
+    version_rule = "Adapter-defined version ordering"
+    environment_keys = ("OMP_NUM_THREADS",)
+
+    def check_installation(self, info, path):
+        """校验探测到的主程序属于安装根目录；缺少主程序或路径不符时抛出 VersionMismatchError。"""
+        executable = info.executables.get(self.main_executable)
+        if not executable:
+            raise VersionMismatchError("Adapter 未提供主程序标识或探测结果缺少主程序")
+        if Path(path).resolve() not in Path(executable).resolve().parents:
+            raise VersionMismatchError("当前环境使用了另一安装的可执行文件")
+
     def template_filters(self):
         return {
             "real": self.format_real,
@@ -205,6 +248,10 @@ class SolverAdapter(ABC):
         if not isinstance(value, (str, Path)):
             raise ConfigurationError("path 必须为路径字符串")
         return self.format_string(str(value))
+
+    def validate_template(self, path):
+        """校验原生模板的相对路径。默认不限制布局；内核或版本类可抛出 ConfigurationError。"""
+        return None
 
     @abstractmethod
     def probe(self, context):

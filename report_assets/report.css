@@ -11,7 +11,8 @@
 }
 
 body {
-    margin: 0
+    margin: 0;
+    overflow-wrap: anywhere
 }
 
 header {

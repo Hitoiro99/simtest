@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import importlib
+import os
 import pkgutil
 import re
+import subprocess
+from pathlib import Path
+from types import SimpleNamespace
 
-from .exceptions import ConfigurationError, UnsupportedCaseError
+from common.io import atomic_text, read_yaml
+
+from .exceptions import ConfigurationError, PreprocessError, UnsupportedCaseError, VersionMismatchError
 
 ADAPTERS = {}
 
@@ -96,3 +102,154 @@ def mapped(declaration, canonical, adapter):
     if not matches:
         return canonical, declaration.get("unit", "")
     return matches[0]["name"], matches[0].get("unit", declaration.get("unit", ""))
+
+
+def version_key(name, version):
+    """使用已注册内核的版本规则返回排序键，不读取或探测本机安装。"""
+    discover()
+    versions = ADAPTERS.get(name, {})
+    if not versions:
+        raise UnsupportedCaseError("未注册求解器: " + name)
+    public = min(versions.values(), key=lambda cls: cls.version_key(cls.version))
+    return public.version_key(version)
+
+
+def load_env(installation):
+    """根据安装配置返回独立环境变量字典；配置非法或加载失败时抛出配置或准备异常。"""
+    spec = installation.get("environment", {"kind": "existing"})
+    kind = spec.get("kind")
+    base = dict(os.environ)
+    if kind == "existing":
+        if "modules" in spec or "script" in spec:
+            raise ConfigurationError("existing 不允许模块或脚本参数")
+        return base
+    if kind == "script":
+        if "modules" in spec:
+            raise ConfigurationError("script 不允许 modules")
+        script = spec.get("script")
+        if not isinstance(script, str) or not Path(script).is_file():
+            raise ConfigurationError("环境脚本不存在")
+        argv = ["bash", "-c", 'source "$1" >/dev/null || exit $?; env -0', "simtest", script]
+    elif kind == "module":
+        if "script" in spec:
+            raise ConfigurationError("module 不允许 script")
+        modules = spec.get("modules")
+        if (
+            not isinstance(modules, list)
+            or not modules
+            or not all(isinstance(m, str) and m and not m.startswith("-") for m in modules)
+        ):
+            raise ConfigurationError("非法模块参数")
+        argv = ["bash", "-lc", 'module load "$@" >/dev/null || exit $?; env -0', "simtest"] + modules
+    else:
+        raise ConfigurationError("未知 environment.kind")
+    result = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=base, timeout=30)
+    if result.returncode:
+        raise PreprocessError("环境加载失败: " + result.stderr.decode("utf-8", "replace")[-2000:])
+    environment = {}
+    for pair in result.stdout.split(b"\0"):
+        if b"=" in pair:
+            key, value = pair.split(b"=", 1)
+            environment[key.decode("utf-8", "replace")] = value.decode("utf-8", "replace")
+    environment["OMP_NUM_THREADS"] = "1"
+    return environment
+
+
+def register_install(root, args):
+    """按 CLI 参数探测已有安装并原子写入配置；返回配置路径和版本信息，配置冲突时抛出配置或版本异常。"""
+    discover()
+
+    if args.solver not in ADAPTERS:
+        raise ConfigurationError("求解器没有注册")
+    path = Path(args.path).resolve()
+    if not path.is_dir():
+        raise ConfigurationError("安装根目录不存在")
+    environment = {"kind": args.environment}
+    if args.environment_script:
+        environment["script"] = str(Path(args.environment_script).resolve())
+    if args.environment_module:
+        environment["modules"] = args.environment_module
+    installation = {"solver": args.solver, "version": args.version, "path": str(path), "environment": environment}
+    activated = load_env(installation)
+    public = min(ADAPTERS[args.solver].values(), key=lambda cls: cls.version_key(cls.version))()
+    info = public.probe(SimpleNamespace(environment=activated))
+    if info.version != args.version:
+        raise VersionMismatchError("配置 %s 与真实 %s 不一致" % (args.version, info.version))
+    try:
+        public.check_installation(info, path)
+    except VersionMismatchError as exc:
+        raise ConfigurationError("激活后的求解器不属于 --path 指定的安装") from exc
+    select(args.solver, info.version)
+
+    if args.config:
+        file = Path(args.config).resolve()
+    else:
+        file = root / "config.yaml"
+    if file.exists():
+        config = read_yaml(file)
+    else:
+        config = {"installations": []}
+
+    if not isinstance(config.get("installations"), list):
+        raise ConfigurationError("config.installations 必须为列表")
+    existing = [
+        item
+        for item in config["installations"]
+        if (item.get("solver"), str(item.get("version"))) == (args.solver, args.version)
+    ]
+    if len(existing) > 1:
+        raise ConfigurationError("部署配置有重复安装记录")
+    if existing and not args.force:
+        raise ConfigurationError("安装已登记；替换需使用 --force")
+    config["installations"] = [item for item in config["installations"] if item not in existing] + [installation]
+    import yaml
+
+    atomic_text(file, yaml.safe_dump(config, allow_unicode=True, sort_keys=False))
+
+    ignore = root / ".gitignore"
+    if ignore.exists():
+        content = ignore.read_text()
+    else:
+        content = ""
+    if "config.yaml" not in content.splitlines():
+        atomic_text(ignore, content.rstrip() + "\nconfig.yaml\n")
+    return {"config": str(file), "solver": info.__dict__}
+
+
+def select_install(root, selector, config_file=None):
+    """按名称和版本选择安装，返回安装、环境、实际版本及 Adapter；缺失、不兼容或歧义时抛出异常。"""
+    discover()
+
+    name, sep, requested = selector.partition("@")
+    requested = requested if sep else "latest"
+    if name not in ADAPTERS:
+        raise UnsupportedCaseError("未注册求解器: " + name)
+
+    if config_file:
+        config_path = Path(config_file)
+    else:
+        config_path = root / "config.yaml"
+    config = read_yaml(config_path)
+    installations = [
+        entry
+        for entry in config.get("installations", [])
+        if entry.get("solver") == name and (requested == "latest" or str(entry.get("version")) == requested)
+    ]
+    if not installations:
+        raise ConfigurationError("没有匹配安装，请先 simtest setup")
+
+    found = []
+    public = min(ADAPTERS[name].values(), key=lambda cls: cls.version_key(cls.version))()
+    for installation in installations:
+        env = load_env(installation)
+        info = public.probe(SimpleNamespace(environment=env))
+        if info.version != str(installation["version"]):
+            raise VersionMismatchError("部署版本与探测版本不一致")
+        public.check_installation(info, installation["path"])
+        found.append((public.version_key(info.version), installation, env, info))
+
+    found.sort(key=lambda item: item[0], reverse=True)
+    if len(found) > 1 and found[0][0] == found[1][0]:
+        raise ConfigurationError("latest 对应多个同版本安装，请消除部署歧义")
+    _, installation, env, info = found[0]
+    return installation, env, info, select(name, info.version)

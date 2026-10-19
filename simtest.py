@@ -14,8 +14,8 @@ from case_management.cases import (
     load_case,
     load_condition,
 )
-from run_control.install import register_install, select_install
-from run_control.jobs import prepare_job, run_job
+from solvers.registry import register_install, select_install
+from jobs import prepare_job, run_job
 from solvers.exceptions import SolverError
 
 
@@ -67,7 +67,6 @@ def parser():
     run.add_argument("--timeout", type=positive, default=300)
     run.add_argument("--heartbeat-timeout", type=positive, default=120)
     run.add_argument("--prepare-only", action="store_true")
-    run.add_argument("--keep-raw", action="store_true")
 
     reports = commands.add_parser("report")
     reports.add_argument("case")
@@ -97,7 +96,7 @@ def main(argv=None):
                     })
 
             elif args.kind == "runs":
-                from reporting.report import archived_runs
+                from archive import archived_runs
 
                 result = archived_runs(root, args.case)
 
@@ -110,7 +109,7 @@ def main(argv=None):
                 }
 
         elif args.command == "validate":
-            from case_management.templates import choose
+            from case_management.templates import choose, template_files
 
             path = Path(args.case)
             if path.is_dir():
@@ -128,6 +127,7 @@ def main(argv=None):
 
             _, _, info, adapter = select_install(root, args.solver, args.config)
             chain = choose(path, adapter)
+            template_files(chain, adapter)
             execution = execution_config(case.get("execution", {}))
             for condition in conditions:
                 load_condition(path, case, condition)
@@ -171,13 +171,13 @@ def main(argv=None):
                         root, args.case, condition, selector, args,
                     )
                     item = run_job(
-                        context, adapter, args.prepare_only, args.keep_raw,
+                        context, adapter, args.prepare_only,
                     )
                     results.append(item)
                     print(json.dumps(item, ensure_ascii=False), flush=True)
 
             if not args.prepare_only:
-                from reporting.report import report
+                from report import report
 
                 job_ids = [item["job_id"] for item in results]
                 report_result = report(root, args.case, job_ids)
@@ -189,7 +189,7 @@ def main(argv=None):
             return 0
 
         elif args.command == "report":
-            from reporting.report import report
+            from report import report
 
             result = report(root, args.case, args.job_id)
 

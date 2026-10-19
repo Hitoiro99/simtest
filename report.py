@@ -1,14 +1,161 @@
-"""Offline HTML presentation. Invalid observations remain gaps, never zeroes."""
+"""Generate reusable offline reports from archived observations and terminal failure diagnostics."""
 
 from collections import OrderedDict
+import hashlib
+from pathlib import Path
+import shutil
+from types import SimpleNamespace
+import csv
+import datetime
 import html
+from importlib import resources
 import json
 import math
 import os
-from pathlib import Path
 from urllib.parse import quote
+import uuid
 
-from common.io import json_safe
+from analysis import field_comparisons, monitor_comparisons
+from archive import load_observations, verify_archive
+from common.io import atomic_json, atomic_text, identifier, inventory, json_safe, sha256
+from solvers.base import redact
+from solvers.exceptions import ConfigurationError, PostprocessError
+from solvers.registry import version_key
+
+
+def report_sources(root, case_id, job_ids=None):
+    """Load selected terminal jobs, deriving observations from archived CSV/VTU."""
+    requested = set(job_ids or [])
+    for job_id in requested:
+        identifier(job_id)
+    found = {}
+    artifacts = root / "artifacts" / case_id
+    for file in sorted((artifacts / "runs").glob("*/*/*/*/manifest.json")):
+        if requested and file.parent.name not in requested:
+            continue
+        verify_archive(file.parent)
+        manifest = json.loads(file.read_text(encoding="utf-8"))
+        status = json.loads((file.parent / "status.json").read_text(encoding="utf-8"))
+        if status["status"] != "SUCCEEDED":
+            raise PostprocessError("正式归档不是成功作业: " + str(file.parent))
+        observations = load_observations(file.parent, manifest)
+        manifest["monitors"] = observations["monitors"]
+        context = SimpleNamespace(case=manifest["case"], condition=manifest["condition"], manifest=manifest)
+        manifest["comparisons"] = {
+            "monitors": monitor_comparisons(context),
+            "fields": field_comparisons(context, observations["fields"]),
+        }
+        found[manifest["job_id"]] = (file.parent, manifest, status)
+    failures = {"UNSUPPORTED", "TIMEOUT", "CRASHED", "INFRA_ERROR", "CANCELLED"}
+    for file in sorted((root / "runs").glob("*/manifest.json")):
+        job_id = file.parent.name
+        if (requested and job_id not in requested) or job_id in found:
+            continue
+        manifest = json.loads(file.read_text(encoding="utf-8"))
+        identity_case = manifest.get("identity", {}).get("case")
+        if manifest.get("case", {}).get("id", identity_case) != case_id:
+            continue
+        status = json.loads((file.parent / "status.json").read_text(encoding="utf-8"))
+        if status["status"] not in failures:
+            if job_id in requested:
+                raise ConfigurationError("报告作业尚未归档或未进入失败终态: " + job_id)
+            continue
+        manifest["monitors"] = {}
+        manifest["comparisons"] = {"monitors": [], "fields": []}
+        status["diagnostics"] = json_safe(status.get("diagnostics", []))
+        status["log_summary"] = []
+        for log in sorted((file.parent / "logs").glob("*.log")):
+            if log.is_symlink():
+                raise PostprocessError("失败日志不允许符号链接")
+            with log.open("rb") as stream:
+                stream.seek(max(0, log.stat().st_size - 4096))
+                tail = stream.read().decode("utf-8", "replace")
+            status["log_summary"].append({"file": log.name, "tail": redact(tail)})
+        status["diagnostics"] = [redact(str(item)) for item in status["diagnostics"]]
+        found[job_id] = (file.parent, manifest, status)
+    if requested and set(found) != requested:
+        raise ConfigurationError("请求的报告作业不存在或尚未进入终态")
+    if not found:
+        raise ConfigurationError("没有成功归档或终态失败作业可生成报告；prepare-only 作业不生成报告。")
+    return [found[job_id] for job_id in sorted(found)]
+
+
+def report_digest(value):
+    encoded = json.dumps(json_safe(value), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def report(root, case_id, job_ids=None):
+    """Atomically create or reuse a verified offline report for terminal jobs."""
+    identifier(case_id)
+    runs = report_sources(root, case_id, job_ids)
+    code = {name: sha256(Path(__file__).with_name(name)) for name in ("report.py", "analysis.py")}
+    for name in ("report.js", "report.css"):
+        if hasattr(resources, "files"):
+            content = resources.files("report_assets").joinpath(name).read_bytes()
+        else:
+            content = resources.read_binary("report_assets", name)
+        code[name] = hashlib.sha256(content).hexdigest()
+    identities = []
+    for path, manifest, status in runs:
+        identities.append({"job_id": manifest["job_id"], "manifest": manifest, "status": status})
+    report_id = report_digest({"schema": 1, "case": case_id, "jobs": identities, "code": code})
+    reports = root / "artifacts" / case_id / "reports"
+    reports.mkdir(parents=True, exist_ok=True)
+    destination = reports / report_id
+    import fcntl
+
+    with (reports / ".lock").open("a+b") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            if destination.exists():
+                try:
+                    expected = json.loads((destination / "integrity.json").read_text(encoding="utf-8"))
+                    actual = inventory(destination)
+                    actual.pop("integrity.json", None)
+                    if expected["report_id"] != report_id or actual != expected["files"]:
+                        raise ValueError("报告文件清单或哈希不符")
+                except (OSError, ValueError, KeyError) as exc:
+                    raise PostprocessError("拒绝复用或覆盖损坏报告: " + str(destination)) from exc
+                return {"report": str(destination / "report.html"), "runs": len(runs), "reused": True}
+            staging = reports / ("." + report_id + ".staging-" + uuid.uuid4().hex)
+            staging.mkdir()
+            try:
+                write_report(staging, case_id, runs)
+                atomic_json(staging / "integrity.json", {"report_id": report_id, "files": inventory(staging)})
+                staging.rename(destination)
+            except BaseException:
+                shutil.rmtree(staging)
+                raise
+            return {"report": str(destination / "report.html"), "runs": len(runs), "reused": False}
+        finally:
+            fcntl.flock(lock, fcntl.LOCK_UN)
+
+
+def write_report(destination, case_id, runs):
+    created = datetime.datetime.now(datetime.timezone.utc)
+    charts = build_charts(runs)
+    figures = static_figures(destination, charts)
+    rows = monitor_rows(case_id, runs)
+    columns = [
+        "job_id", "case", "condition", "monitor", "solver", "version", "processes", "last_step", "last_time",
+        "last_value", "reference_id", "reference_value", "absolute_error", "normalized_error_percent",
+        "comparison_status", "unit", "run_status",
+    ]
+    with (destination / "summary.csv").open("w", newline="", encoding="utf-8-sig") as stream:
+        writer = csv.DictWriter(stream, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
+    summary = {
+        "case": case_id,
+        "created": created.isoformat(),
+        "report_format": "html",
+        "runs": [{"archive": str(p), "manifest": m, "status": s} for p, m, s in runs],
+    }
+    atomic_json(destination / "summary.json", summary)
+    atomic_text(
+        destination / "report.html", render_html(case_id, created.isoformat(), runs, charts, rows, figures, destination)
+    )
 
 
 def number(value):
@@ -36,13 +183,17 @@ def label(manifest):
 
 def build_charts(runs):
     charts = OrderedDict()
+    runs = [(path, manifest, status) for path, manifest, status in runs if status["status"] == "SUCCEEDED"]
     latest = {}
     for path, m, status in runs:
         key = (m["identity"]["condition"], m["actual_solver"]["name"])
-        latest[key] = max(latest.get(key, 0), int(m["actual_solver"]["version"]))
+        candidate = version_key(m["actual_solver"]["name"], m["actual_solver"]["version"])
+        if key not in latest or candidate > latest[key]:
+            latest[key] = candidate
     for path, m, status in runs:
         condition = m["identity"]["condition"]
-        if int(m["actual_solver"]["version"]) != latest[(condition, m["actual_solver"]["name"])]:
+        candidate = version_key(m["actual_solver"]["name"], m["actual_solver"]["version"])
+        if candidate != latest[(condition, m["actual_solver"]["name"])]:
             continue
         for name, records in m.get("monitors", {}).items():
             declaration = m["case"]["monitors"].get(name, {})
@@ -242,9 +393,13 @@ def table(headers, rows):
 
 
 def render_html(case_id, created, runs, charts, rows, figures, destination):
-    assets = Path(__file__).parent / "report_assets"
-    css = (assets / "report.css").read_text(encoding="utf-8")
-    js = (assets / "report.js").read_text(encoding="utf-8")
+    if hasattr(resources, "files"):
+        assets = resources.files("report_assets")
+        css = assets.joinpath("report.css").read_text(encoding="utf-8")
+        js = assets.joinpath("report.js").read_text(encoding="utf-8")
+    else:
+        css = resources.read_text("report_assets", "report.css", encoding="utf-8")
+        js = resources.read_text("report_assets", "report.js", encoding="utf-8")
     # A literal </script> in archived text must never close the JSON data block.
     payload = (
         json.dumps(json_safe(charts), ensure_ascii=False, allow_nan=False)
@@ -272,6 +427,8 @@ def render_html(case_id, created, runs, charts, rows, figures, destination):
         )
         for diagnostic in status.get("diagnostics", []):
             diagnostics.append("<pre>" + escaped(m["job_id"]) + "\n" + escaped(diagnostic) + "</pre>")
+        for log in status.get("log_summary", []):
+            diagnostics.append("<pre>" + escaped(m["job_id"] + " / " + log["file"]) + "\n" + escaped(log["tail"]) + "</pre>")
         for ref_id, reference in m.get("condition", {}).get("references", {}).items():
             source = reference.get("source")
             link = ""
@@ -322,7 +479,7 @@ def render_html(case_id, created, runs, charts, rows, figures, destination):
         "<p>仿真测试报告 · " + escaped(created) + " · " + str(len(runs)) + " 个作业</p>",
         '<nav><a href="#jobs">作业状态</a><a href="#charts">交互图表</a><a href="#observations">数值明细</a><a href="#sources">参考与下载</a></nav></header><main>',
         '<div class="notice">SUCCEEDED 表示执行和必需结果完整，不代表收敛或数值通过。报告不设置验收阈值；归一化尺度不是容差。</div>',
-        '<section id="jobs"><h2>作业状态</h2><p>生成前已逐一校验归档哈希。耗时仅反映各次运行环境，不据此判断跨硬件性能回归。</p>',
+        '<section id="jobs"><h2>作业状态</h2><p>成功作业已校验归档及标准结果；失败作业显示保留现场的状态和日志摘要。耗时仅反映各次运行环境，不据此判断跨硬件性能回归。</p>',
         table(
             ["作业 ID", "工况", "求解器 / 实际版本", "进程数", "状态", "墙钟 / s", "CPU / s", "峰值内存 / MiB"],
             job_rows,

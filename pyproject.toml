@@ -13,10 +13,10 @@ dependencies = ["PyYAML>=5.3", "Jinja2>=2.10", "matplotlib>=3.1"]
 simtest = "simtest:main"
 
 [tool.setuptools]
-py-modules = ["simtest"]
+py-modules = ["simtest", "jobs", "analysis", "archive", "report"]
 
 [tool.setuptools.packages.find]
-include = ["case_management*", "run_control*", "postprocessing*", "reporting*", "storage*", "common*", "solvers*"]
+include = ["case_management*", "common*", "solvers*", "report_assets*"]
 
 [tool.setuptools.package-data]
-reporting = ["report_assets/*.js", "report_assets/*.css"]
+report_assets = ["*.js", "*.css"]

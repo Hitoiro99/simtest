@@ -101,6 +101,7 @@ def load_case(path):
 
 
 def mesh_asset(path):
+    """返回案例唯一源网格路径，只检查资产数量和文件/目录类型，不解析原生格式。"""
     assets = [Path(path) / name for name in ("mesh.cgns", "mesh.msh", "polyMesh") if (Path(path) / name).exists()]
     if len(assets) != 1:
         raise ConfigurationError("案例必须有且只有一个源网格资产")
@@ -108,9 +109,6 @@ def mesh_asset(path):
     if asset.name == "polyMesh":
         if not asset.is_dir():
             raise ConfigurationError("polyMesh 必须为目录")
-        for name in ("points", "faces", "owner", "neighbour", "boundary"):
-            if not (asset / name).is_file():
-                raise ConfigurationError("网格缺少 " + name)
     elif not asset.is_file():
         raise ConfigurationError("网格资产必须为文件")
     return asset
