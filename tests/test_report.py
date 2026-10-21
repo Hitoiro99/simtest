@@ -9,7 +9,7 @@ from unittest.mock import patch
 from archive import archived_runs, manifest_digest
 from simtest import parser
 from common.io import atomic_json, inventory
-from report import build_charts, monitor_rows, render_html, report
+from report import build_charts, log_tick_label, monitor_rows, render_html, report
 from solvers.exceptions import ConfigurationError, PostprocessError
 
 
@@ -17,7 +17,7 @@ def fixture():
     return {
         "job_id": "job-a",
         "created": "2026-10-13",
-        "identity": {"condition": "default"},
+        "identity": {"condition": "Re=10"},
         "actual_solver": {"name": "OpenFOAM", "version": "12"},
         "execution": {"backend": "serial", "processes": 1},
         "case": {"monitors": {"u": {"unit": "m/s"}}},
@@ -30,7 +30,7 @@ def fixture():
 
 
 def stored_fixture(root, job_id="job-a"):
-    path = root / "artifacts/example/runs/default/OpenFOAM/12" / job_id
+    path = root / "artifacts/example/runs/Re=10/OpenFOAM/12" / job_id
     path.mkdir(parents=True)
     (path / "input").mkdir()
     (path / "input" / "parameters.txt").write_text("fixed input", encoding="utf-8")
@@ -110,10 +110,43 @@ class ReportTests(unittest.TestCase):
             dict(row, reference_id="r2"),
         ]
         fields = [c for c in build_charts([(Path("archive"), m, {"status": "SUCCEEDED"})]) if c["kind"] == "field"]
-        self.assertEqual(len(fields), 4)
+        self.assertEqual(len(fields), 8)
         points = fields[0]["series"][0]["points"]
         self.assertEqual([p["y"] for p in points], [2, None, 2])
-        self.assertEqual(points[0]["metrics"]["absolute_error.mean"], 0.1)
+        self.assertEqual(points[0]["metrics"]["normalized_error.mean"], 1)
+        self.assertEqual(fields[1]["series"][0]["points"][0]["metrics"]["absolute_error.mean"], 0.1)
+
+    def test_components_and_error_types_have_independent_charts(self):
+        manifest = fixture()
+        manifest["comparisons"]["fields"] = [
+            {"domain": "fluid", "field": "velocity", "component": component, "reference_id": "r",
+             "time": 0, "unit": "m/s", "status": "AVAILABLE",
+             "absolute_error": {"max": 1}, "normalized_error": {"max": 0.1}}
+            for component in ("x", "y", "z", "magnitude")
+        ]
+        charts = build_charts([(Path("archive"), manifest, {"status": "SUCCEEDED"})])
+        fields = [chart for chart in charts if chart["kind"] == "field"]
+        self.assertEqual(len(fields), 8)
+        self.assertEqual({(chart["component"], chart["error_kind"]) for chart in fields},
+                         {(component, kind) for component in ("x", "y", "z", "magnitude")
+                          for kind in ("absolute_error", "normalized_error")})
+
+    def test_residual_has_step_axis_log_default_and_nonpositive_raw_data(self):
+        manifest = fixture()
+        manifest["case"]["monitors"] = {"residual_p": {"unit": "1"}}
+        manifest["monitors"] = {"residual_p": [
+            {"step": 1, "time": 0.001, "value": 1e-4},
+            {"step": 2, "time": 0.002, "value": 0},
+            {"step": 3, "time": 0.003, "value": -1},
+        ]}
+        chart = build_charts([(Path("archive"), manifest, {"status": "SUCCEEDED"})])[0]
+        self.assertEqual(chart["yscale"], "log")
+        self.assertEqual([point["x"] for point in chart["series"][0]["points"]], [1, 2, 3])
+        self.assertEqual([point["raw"] for point in chart["series"][0]["points"]], [1e-4, 0, -1])
+        self.assertIn("Re=10", chart["series"][0]["label"])
+
+    def test_log_tick_label_uses_ascii_minus(self):
+        self.assertEqual(log_tick_label(1e-3, None), "10^-3")
 
     def test_html_is_offline_and_escapes_archived_text(self):
         m = fixture()
@@ -184,6 +217,10 @@ class ReportTests(unittest.TestCase):
             self.assertEqual(derived["monitors"]["u"][-1]["step"], 1)
             self.assertEqual(derived["comparisons"]["monitors"][0]["reference_value"], 1)
             self.assertEqual(derived["comparisons"]["monitors"][0]["status"], "UNAVAILABLE")
+            self.assertEqual(derived["source_manifest"]["monitors"]["u"][0]["value"], 123456)
+            self.assertIn("field_samples", derived)
+            self.assertTrue(Path(result["report"]).with_name("monitors.csv").is_file())
+            self.assertTrue(Path(result["report"]).with_name("field_errors.csv").is_file())
             self.assertEqual(before, (path / "manifest.json").read_bytes())
 
     def test_terminal_failure_report_has_redacted_logs_without_fake_curves(self):

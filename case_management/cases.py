@@ -55,6 +55,33 @@ def execution_config(execution):
     return execution
 
 
+def execution_configs(execution):
+    """规范化一个或多个 execution 声明，返回按声明顺序排列的配置列表。"""
+    if isinstance(execution, dict):
+        entries = [execution]
+    elif isinstance(execution, list):
+        entries = execution
+    else:
+        raise ConfigurationError("execution 必须为映射或列表")
+    if not entries:
+        raise ConfigurationError("execution 至少需要一个配置")
+    profiles = []
+    names = set()
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ConfigurationError("execution 列表项必须为映射")
+        profile = execution_config(entry)
+        name = entry.get("name")
+        if name is not None:
+            identifier(name)
+            if name in names:
+                raise ConfigurationError("execution name 重复: " + name)
+            names.add(name)
+            profile["name"] = name
+        profiles.append(profile)
+    return profiles
+
+
 def load_case(path):
     path = Path(path).resolve()
     case = read_yaml(path / "case.yaml")
@@ -95,7 +122,7 @@ def load_case(path):
                         raise ConfigurationError("mapping 缺少 solver/name")
                     parse(item.get("unit", declaration.get("unit")))
 
-    execution_config(case.get("execution", {}))
+    execution_configs(case.get("execution", {}))
     mesh_asset(path)
     return case
 

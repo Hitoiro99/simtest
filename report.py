@@ -1,6 +1,7 @@
 """Generate reusable offline reports from archived observations and terminal failure diagnostics."""
 
 from collections import OrderedDict
+import copy
 import hashlib
 from pathlib import Path
 import shutil
@@ -14,6 +15,8 @@ import math
 import os
 from urllib.parse import quote
 import uuid
+
+from jinja2 import Environment, StrictUndefined
 
 from analysis import field_comparisons, monitor_comparisons
 from archive import load_observations, verify_archive
@@ -38,7 +41,10 @@ def report_sources(root, case_id, job_ids=None):
         status = json.loads((file.parent / "status.json").read_text(encoding="utf-8"))
         if status["status"] != "SUCCEEDED":
             raise PostprocessError("正式归档不是成功作业: " + str(file.parent))
+        source_manifest = copy.deepcopy(manifest)
         observations = load_observations(file.parent, manifest)
+        manifest["source_manifest"] = source_manifest
+        manifest["field_samples"] = observations["fields"]
         manifest["monitors"] = observations["monitors"]
         context = SimpleNamespace(case=manifest["case"], condition=manifest["condition"], manifest=manifest)
         manifest["comparisons"] = {
@@ -90,7 +96,8 @@ def report(root, case_id, job_ids=None):
     identifier(case_id)
     runs = report_sources(root, case_id, job_ids)
     code = {name: sha256(Path(__file__).with_name(name)) for name in ("report.py", "analysis.py")}
-    for name in ("report.js", "report.css"):
+    for name in ("report.js", "report.css", "report.html", "echarts.min.js",
+                 "ECHARTS-LICENSE.txt", "ECHARTS-NOTICE.txt", "ECHARTS-D3-LICENSE.txt", "echarts-version.json"):
         if hasattr(resources, "files"):
             content = resources.files("report_assets").joinpath(name).read_bytes()
         else:
@@ -153,9 +160,48 @@ def write_report(destination, case_id, runs):
         "runs": [{"archive": str(p), "manifest": m, "status": s} for p, m, s in runs],
     }
     atomic_json(destination / "summary.json", summary)
+    for name in ("ECHARTS-LICENSE.txt", "ECHARTS-NOTICE.txt", "ECHARTS-D3-LICENSE.txt"):
+        atomic_text(destination / name, asset_text(name))
+    write_details(destination, runs)
     atomic_text(
         destination / "report.html", render_html(case_id, created.isoformat(), runs, charts, rows, figures, destination)
     )
+
+
+def asset_text(name):
+    if hasattr(resources, "files"):
+        return resources.files("report_assets").joinpath(name).read_text(encoding="utf-8")
+    return resources.read_text("report_assets", name, encoding="utf-8")
+
+
+def detail_records(runs):
+    monitors, fields = [], []
+    for path, manifest, status in runs:
+        for name, records in manifest.get("monitors", {}).items():
+            for record in records:
+                monitors.append({"job_id": manifest["job_id"], "monitor": name, **record})
+        for record in manifest.get("comparisons", {}).get("fields", []):
+            fields.append({"job_id": manifest["job_id"], **record})
+    return monitors, fields
+
+
+def write_details(destination, runs):
+    """Export every observation and comparison, preserving nested coordinates as JSON."""
+    monitors, fields = detail_records(runs)
+    for name, records in (("monitors.csv", monitors), ("field_errors.csv", fields)):
+        columns = list(dict.fromkeys(key for record in records for key in record))
+        if not columns:
+            columns = ["job_id"]
+        with (destination / name).open("w", newline="", encoding="utf-8-sig") as stream:
+            writer = csv.DictWriter(stream, fieldnames=columns)
+            writer.writeheader()
+            for record in records:
+                row = {}
+                for key, value in record.items():
+                    if isinstance(value, (dict, list)):
+                        value = json.dumps(json_safe(value), ensure_ascii=False)
+                    row[key] = value
+                writer.writerow(row)
 
 
 def number(value):
@@ -168,15 +214,29 @@ def number(value):
         return None
 
 
+def condition_name(manifest):
+    """Return the condition ID, which is the YAML file stem under conditions/."""
+    return manifest["identity"]["condition"]
+
+
+def execution_label(execution):
+    if execution.get("name"):
+        return execution["name"]
+    processes = execution.get("processes", 1)
+    mode = "%d procs" % processes
+    backend = execution.get("backend", "serial")
+    if backend != "serial":
+        mode += " / " + backend
+    return mode
+
+
 def label(manifest):
     info = manifest["actual_solver"]
-    execution = manifest["execution"]
-    return "%s / %s / %s / %s × %s · %s" % (
+    return "%s / %s / %s / %s · %s" % (
         info["name"],
         info["version"],
-        manifest["identity"]["condition"],
-        execution["backend"],
-        execution["processes"],
+        condition_name(manifest),
+        execution_label(manifest["execution"]),
         manifest["job_id"][:8],
     )
 
@@ -198,9 +258,18 @@ def build_charts(runs):
         for name, records in m.get("monitors", {}).items():
             declaration = m["case"]["monitors"].get(name, {})
             unit = declaration.get("unit", "1")
-            # Never mix physical times and step numbers on one axis.
-            for axis in ("time", "step"):
-                selected = [r for r in records if (r.get("time") is not None) == (axis == "time")]
+            residual = name.startswith("residual_") or declaration.get("type") == "residual"
+            mappings = declaration.get("mapping", [])
+            residual = residual or any(
+                isinstance(item, dict) and str(item.get("name", "")).startswith("residual:")
+                for item in mappings
+            )
+            axes = ("step",) if residual else ("time", "step")
+            for axis in axes:
+                if residual:
+                    selected = records
+                else:
+                    selected = [r for r in records if (r.get("time") is not None) == (axis == "time")]
                 if not selected:
                     continue
                 key = ("monitor", name, unit, axis)
@@ -217,6 +286,7 @@ def build_charts(runs):
                         "unit": unit,
                         "xlabel": xlabel,
                         "ylabel": name + " [" + unit + "]",
+                        "yscale": "log" if residual else "linear",
                         "series": [],
                     },
                 )
@@ -233,6 +303,7 @@ def build_charts(runs):
                             "y": y,
                             "raw": record["value"],
                             "step": record["step"],
+                            "time": record.get("time"),
                             "quality": record.get("quality", "valid"),
                         }
                     )
@@ -250,50 +321,41 @@ def build_charts(runs):
                             }
                         )
         for row in m.get("comparisons", {}).get("fields", []):
-            # Domain/field/reference/condition/unit define independent comparisons.
-            key = ("field", condition, row["domain"], row["field"], row["reference_id"], row.get("unit", "1"))
-            chart = charts.setdefault(
-                key,
-                {
+            for error_kind in ("normalized_error", "absolute_error"):
+                key = ("field", condition, row["domain"], row["field"], row["reference_id"],
+                       row.get("unit", "1"), row["component"], error_kind)
+                if error_kind == "normalized_error":
+                    title = "归一化误差"
+                    ylabel = "Maximum normalized error [%]"
+                    factor = 100
+                else:
+                    title = "绝对误差"
+                    ylabel = "Maximum absolute error [" + key[5] + "]"
+                    factor = 1
+                chart = charts.setdefault(key, {
                     "kind": "field",
-                    "title": " / ".join(key[1:5]),
+                    "title": " / ".join((condition_name(m), row["domain"], row["field"], row["component"], title)),
                     "description": "按实际保存时刻比较；均值和 RMS 按单元体积加权。",
-                    "unit": key[5],
-                    "xlabel": "Physical time [s]",
-                    "ylabel": "Maximum normalized error [%]",
-                    "series": [],
-                },
-            )
-            series_label = label(m) + " / " + row["component"]
-            series = next((s for s in chart["series"] if s["label"] == series_label), None)
-            if series is None:
-                series = {"label": series_label, "job_id": m["job_id"], "points": []}
-                chart["series"].append(series)
-            metrics = {}
-            for kind in ("normalized_error", "absolute_error"):
+                    "unit": key[5], "component": row["component"], "error_kind": error_kind,
+                    "xlabel": "Physical time [s]", "ylabel": ylabel, "yscale": "linear", "series": [],
+                })
+                series_label = label(m)
+                series = next((s for s in chart["series"] if s["label"] == series_label), None)
+                if series is None:
+                    series = {"label": series_label, "job_id": m["job_id"], "points": []}
+                    chart["series"].append(series)
+                metrics = {}
                 for metric in ("max", "mean", "rms"):
+                    value = None
                     if row["status"] == "AVAILABLE":
-                        value = number((row.get(kind) or {}).get(metric))
-                    else:
-                        value = None
+                        value = number((row.get(error_kind) or {}).get(metric))
                     if value is not None:
-                        if kind == "normalized_error":
-                            factor = 100
-                        else:
-                            factor = 1
-                        metric_value = value * factor
-                    else:
-                        metric_value = None
-                    metrics[kind + "." + metric] = metric_value
-            series["points"].append(
-                {
-                    "x": number(row["time"]),
-                    "y": metrics["normalized_error.max"],
-                    "raw": row.get("reason") or row["status"],
-                    "quality": row["status"],
-                    "metrics": metrics,
-                }
-            )
+                        value *= factor
+                    metrics[error_kind + "." + metric] = value
+                series["points"].append({
+                    "x": number(row["time"]), "y": metrics[error_kind + ".max"],
+                    "raw": row.get("reason") or row["status"], "quality": row["status"], "metrics": metrics,
+                })
     result = list(charts.values())
     for index, chart in enumerate(result):
         chart["id"] = "chart-%02d" % (index + 1)
@@ -337,11 +399,38 @@ def monitor_rows(case_id, runs):
     return rows
 
 
+def log_tick_label(value, position):
+    return "10^%d" % round(math.log10(value))
+
+
 def static_figures(destination, charts):
     import matplotlib
 
     matplotlib.use("Agg")
     from matplotlib import pyplot as plt
+    from matplotlib import font_manager
+    from matplotlib import ticker
+
+    candidates = (
+        Path("/mnt/c/Windows/Fonts/simhei.ttf"),
+        Path("C:/Windows/Fonts/simhei.ttf"),
+        Path("/mnt/c/Windows/Fonts/msyh.ttc"),
+        Path("C:/Windows/Fonts/msyh.ttc"),
+    )
+    for font in candidates:
+        if not font.is_file():
+            continue
+        name = font_manager.FontProperties(fname=str(font)).get_name()
+        if hasattr(font_manager.fontManager, "addfont"):
+            font_manager.fontManager.addfont(str(font))
+        else:
+            from matplotlib.font_manager import FontEntry
+            font_manager.fontManager.ttflist.append(FontEntry(fname=str(font), name=name))
+        plt.rcParams["font.family"] = name
+        break
+    # 用 TrueType 子集嵌入，避免 Type3 在 .ttc 上失败
+    plt.rcParams["pdf.fonttype"] = 3
+    plt.rcParams["axes.unicode_minus"] = False
 
     figures = destination / "figures"
     figures.mkdir()
@@ -357,7 +446,11 @@ def static_figures(destination, charts):
                 linestyle="--" if series.get("reference") else "-",
             )
         values = [p["y"] for s in chart["series"] for p in s["points"] if p["y"] is not None]
-        if values:
+        if chart.get("yscale") == "log":
+            ax.set_yscale("log", nonpositive="mask")
+            ax.yaxis.set_major_formatter(ticker.FuncFormatter(log_tick_label))
+            ax.yaxis.set_minor_formatter(ticker.NullFormatter())
+        elif values:
             lo, hi = min(values), max(values)
             minimum = max(abs(lo), abs(hi)) * 0.1 or 1
             if hi - lo < minimum:
@@ -393,195 +486,40 @@ def table(headers, rows):
 
 
 def render_html(case_id, created, runs, charts, rows, figures, destination):
-    if hasattr(resources, "files"):
-        assets = resources.files("report_assets")
-        css = assets.joinpath("report.css").read_text(encoding="utf-8")
-        js = assets.joinpath("report.js").read_text(encoding="utf-8")
-    else:
-        css = resources.read_text("report_assets", "report.css", encoding="utf-8")
-        js = resources.read_text("report_assets", "report.js", encoding="utf-8")
-    # A literal </script> in archived text must never close the JSON data block.
-    payload = (
-        json.dumps(json_safe(charts), ensure_ascii=False, allow_nan=False)
-        .replace("<", "\\u003c")
-        .replace(">", "\\u003e")
-        .replace("&", "\\u0026")
-        .replace("\u2028", "\\u2028")
-        .replace("\u2029", "\\u2029")
+    # Escape script delimiters independently of HTML autoescaping for JSON script data.
+    payload = json.dumps(json_safe(charts), ensure_ascii=False, allow_nan=False)
+    payload = payload.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
+    payload = payload.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
+    jobs, details = [], []
+    for path, manifest, status in runs:
+        measured = manifest.get("execution_result", {})
+        jobs.append([
+            manifest["job_id"], condition_name(manifest), manifest["actual_solver"]["name"],
+            manifest["actual_solver"]["version"], manifest["execution"]["processes"], status["status"],
+            measured.get("wall_seconds"), measured.get("cpu_seconds"), measured.get("peak_memory_bytes"),
+        ])
+        links = []
+        for name in sorted(inventory(path)):
+            relative = os.path.relpath(str(path / name), str(destination)).replace(os.sep, "/")
+            links.append({"name": name, "url": quote(relative, safe="/")})
+        # The full source manifest and status stay visible, including hardware, parameters and warnings.
+        metadata = {"manifest": manifest, "status": status}
+        details.append({
+            "job_id": manifest["job_id"], "condition": condition_name(manifest), "links": links,
+            "metadata": json.dumps(json_safe(metadata), ensure_ascii=False, indent=2),
+        })
+    monitors, fields = detail_records(runs)
+    field_columns = ["job_id", "domain", "field", "reference_id", "component", "time", "unit",
+                     "absolute_error", "normalized_error", "status", "reason"]
+    monitor_columns = ["job_id", "monitor", "step", "time", "value", "unit", "quality"]
+    environment = Environment(autoescape=True, undefined=StrictUndefined)
+    template = environment.from_string(asset_text("report.html"))
+    return template.render(
+        case_id=case_id, created=created, runs=runs, charts=charts, details=details,
+        css=asset_text("report.css"), js=asset_text("report.js"), echarts=asset_text("echarts.min.js"),
+        payload=payload,
+        jobs_table=table(["作业 ID", "工况", "求解器", "实际版本", "进程数", "状态", "墙钟 / s", "CPU / s", "峰值内存 / byte"], jobs),
+        monitors_table=table(monitor_columns, [[row.get(key) for key in monitor_columns] for row in monitors]),
+        fields_table=table(field_columns, [[row.get(key) for key in field_columns] for row in fields]),
+        summary_table=table(list(rows[0]) if rows else [], [list(row.values()) for row in rows]),
     )
-    job_rows, diagnostics, sources, field_rows = [], [], [], []
-    for path, m, status in runs:
-        measured = m.get("execution_result", {})
-        memory = number(measured.get("peak_memory_bytes"))
-        job_rows.append(
-            [
-                m["job_id"],
-                m["identity"]["condition"],
-                m["actual_solver"]["name"] + " / " + m["actual_solver"]["version"],
-                m["execution"]["processes"],
-                status["status"],
-                measured.get("wall_seconds"),
-                measured.get("cpu_seconds"),
-                memory / 1024**2 if memory is not None else None,
-            ]
-        )
-        for diagnostic in status.get("diagnostics", []):
-            diagnostics.append("<pre>" + escaped(m["job_id"]) + "\n" + escaped(diagnostic) + "</pre>")
-        for log in status.get("log_summary", []):
-            diagnostics.append("<pre>" + escaped(m["job_id"] + " / " + log["file"]) + "\n" + escaped(log["tail"]) + "</pre>")
-        for ref_id, reference in m.get("condition", {}).get("references", {}).items():
-            source = reference.get("source")
-            link = ""
-            if isinstance(source, dict) and isinstance(source.get("file"), str):
-                base = (path / "input" / "_source").resolve()
-                source_path = (base / source["file"]).resolve()
-                try:
-                    source_path.relative_to(base)
-                    relative = os.path.relpath(str(source_path), str(destination)).replace(os.sep, "/")
-                    link = '<a href="' + escaped(quote(relative, safe="/")) + '">归档来源文件</a>'
-                except ValueError:
-                    pass
-            sources.append(
-                "<details><summary>"
-                + escaped(m["job_id"] + " / " + ref_id)
-                + "</summary>"
-                + link
-                + "<pre>"
-                + escaped(reference)
-                + "</pre></details>"
-            )
-        for row in m.get("comparisons", {}).get("fields", []):
-            a, n = row.get("absolute_error") or {}, row.get("normalized_error") or {}
-            percent = [number(n.get(metric)) for metric in ("max", "mean", "rms")]
-            field_rows.append(
-                [
-                    m["job_id"],
-                    m["identity"]["condition"],
-                    row["domain"],
-                    row["field"],
-                    row["reference_id"],
-                    row["component"],
-                    row["time"],
-                    row.get("unit"),
-                    a.get("max"),
-                    a.get("mean"),
-                    a.get("rms"),
-                    *[v * 100 if v is not None else None for v in percent],
-                    a.get("max_position"),
-                    row["status"],
-                    row.get("reason"),
-                ]
-            )
-    parts = [
-        '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">',
-        "<title>" + escaped(case_id) + " · 仿真测试报告</title><style>" + css + "</style></head><body>",
-        '<header><div class="eyebrow">SIMTEST / VERIFIED ARCHIVES</div><h1>' + escaped(case_id) + "</h1>",
-        "<p>仿真测试报告 · " + escaped(created) + " · " + str(len(runs)) + " 个作业</p>",
-        '<nav><a href="#jobs">作业状态</a><a href="#charts">交互图表</a><a href="#observations">数值明细</a><a href="#sources">参考与下载</a></nav></header><main>',
-        '<div class="notice">SUCCEEDED 表示执行和必需结果完整，不代表收敛或数值通过。报告不设置验收阈值；归一化尺度不是容差。</div>',
-        '<section id="jobs"><h2>作业状态</h2><p>成功作业已校验归档及标准结果；失败作业显示保留现场的状态和日志摘要。耗时仅反映各次运行环境，不据此判断跨硬件性能回归。</p>',
-        table(
-            ["作业 ID", "工况", "求解器 / 实际版本", "进程数", "状态", "墙钟 / s", "CPU / s", "峰值内存 / MiB"],
-            job_rows,
-        ),
-        "<details><summary>诊断记录（"
-        + str(len(diagnostics))
-        + "）</summary>"
-        + ("".join(diagnostics) or "<p>无诊断记录。</p>")
-        + "</details></section>",
-        '<section id="charts"><h2>交互图表</h2><p>滚轮缩放，拖动框选；切换“平移”后拖动。双击或“重置”恢复，点击图例显隐曲线。支持触屏单指操作和按钮缩放。</p>',
-        "<p>曲线使用各工况 / 求解器所选作业中的最新实际版本；状态和明细保留全部所选作业。保留全部采样点；无效值显示为断点，不平滑、不插值、不补值。零值在对数轴不可显示，可切回线性轴。</p>",
-        '<div id="chart-list"></div><noscript><p>交互功能需要启用 JavaScript；静态图和以下表格仍可阅读。</p>',
-    ]
-    for chart in charts:
-        parts.append(
-            '<img class="static-chart" alt="' + escaped(chart["title"]) + '" src="figures/' + chart["id"] + '.png">'
-        )
-    parts += [
-        '</noscript></section><section id="observations"><h2>数值明细</h2><label>筛选明细 <input id="table-filter" type="search" placeholder="作业 ID、字段、分量或状态" /></label>',
-        "<h3>监控最后记录</h3><p>最后值无效时保留原值，不回退到更早的有效记录。NO_REFERENCE 表示未定义监控参考值。</p>",
-        '<div class="filterable">'
-        + table(
-            [
-                "作业 ID",
-                "监控量",
-                "最后步",
-                "时间 / s",
-                "最后值",
-                "单位",
-                "参考 ID",
-                "参考值",
-                "绝对误差",
-                "归一化误差 / %",
-                "比较状态",
-            ],
-            [
-                [
-                    r[k]
-                    for k in (
-                        "job_id",
-                        "monitor",
-                        "last_step",
-                        "last_time",
-                        "last_value",
-                        "unit",
-                        "reference_id",
-                        "reference_value",
-                        "absolute_error",
-                        "normalized_error_percent",
-                        "comparison_status",
-                    )
-                ]
-                for r in rows
-            ],
-        )
-        + "</div>",
-        "<h3>解析场偏差</h3><p>逐实际输出时刻比较。均值和 RMS 按单元体积加权；模长误差为两个模长之差的绝对值。— 表示不可用或未提供，不代表零。</p>",
-        '<div class="filterable">'
-        + table(
-            [
-                "作业 ID",
-                "工况",
-                "域",
-                "字段",
-                "参考 ID",
-                "分量",
-                "时间 / s",
-                "单位",
-                "最大绝对误差",
-                "平均绝对误差",
-                "RMS 绝对误差",
-                "最大归一化 / %",
-                "平均归一化 / %",
-                "RMS 归一化 / %",
-                "最大误差位置 / m",
-                "状态",
-                "原因",
-            ],
-            field_rows,
-        )
-        + "</div></section>",
-        '<section id="sources"><h2>参考与下载</h2><p><a href="summary.json" download>完整元数据 JSON</a> · <a href="summary.csv" download>监控汇总 CSV</a></p>',
-        "<p>图表和数据内嵌于本 HTML，可离线交互。来源链接、CSV / JSON 和静态导出需保留同目录文件及相对归档路径。</p>",
-        "".join(sources),
-    ]
-    for chart in charts:
-        parts.append(
-            "<p>"
-            + escaped(chart["title"])
-            + "："
-            + " · ".join(
-                '<a href="figures/' + chart["id"] + "." + ext + '" download>' + ext.upper() + "</a>"
-                for ext in ("png", "svg", "pdf")
-            )
-            + "</p>"
-        )
-    parts += [
-        "</section></main><footer>SIMTEST · 全量记录 / 可追溯归档 / 离线报告</footer>",
-        '<script id="chart-data" type="application/json">'
-        + payload
-        + "</script><script>"
-        + js
-        + "</script></body></html>",
-    ]
-    return "".join(parts)

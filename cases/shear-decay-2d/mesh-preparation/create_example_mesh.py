@@ -48,6 +48,15 @@ def main():
             "generator": "OpenFOAM Foundation 12 blockMesh",
         },
     )
+    try:
+        shutil.rmtree(build)
+    except OSError as exc:
+        print("警告: 无法清理 .build/mesh: %s" % exc, file=sys.stderr)
+    else:
+        try:
+            build.parent.rmdir()
+        except OSError:
+            pass
     print(json.dumps({"mesh": str(case / "polyMesh"), "files": len(inventory(case / "polyMesh"))}))
 
 

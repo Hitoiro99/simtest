@@ -19,7 +19,7 @@ import sys
 
 from analysis import field_comparisons, monitor_comparisons
 from archive import archive, archive_path, cleanup_run, verify_archive
-from case_management.cases import execution_config, load_case, load_condition
+from case_management.cases import execution_config, execution_configs, load_case, load_condition
 from common.io import atomic_json, identifier, inventory, sha256, within
 from solvers.base import redact, run_capture
 from solvers.exceptions import (
@@ -161,13 +161,16 @@ def hardware_info(execution, info, environment):
     }
 
 
-def prepare_job(root, case_id, condition_id, selector, options):
+def prepare_job(root, case_id, condition_id, selector, options, execution=None):
     """探测并规范化完整运行身份，返回上下文和 Adapter；不创建工作区或写入重复记录。"""
     root = Path(root).resolve()
     path = root / "cases" / identifier(case_id)
     case = load_case(path)
     condition, parameters = load_condition(path, case, condition_id)
-    execution = execution_config(case.get("execution", {}))
+    if execution is None:
+        execution = execution_configs(case.get("execution", {}))[0]
+    else:
+        execution = execution_config(execution)
     for name in ("processes", "backend", "openmp_threads"):
         value = getattr(options, name, None)
         if value is not None:

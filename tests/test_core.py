@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 from analysis import field_comparisons, monitor_comparisons
 from archive import archive, verify_archive
-from case_management.cases import execution_config, load_case, load_condition, mesh_asset
+from case_management.cases import execution_config, execution_configs, load_case, load_condition, mesh_asset
 from common.expression import evaluate
 from common.io import read_yaml
 from case_management.templates import materialize
@@ -92,6 +92,19 @@ class CoreTests(unittest.TestCase):
         ):
             with self.assertRaises(ConfigurationError):
                 execution_config(config)
+
+    def test_execution_profiles_support_single_and_list_forms(self):
+        single = execution_configs({"backend": "serial", "processes": 1})
+        self.assertEqual([profile["processes"] for profile in single], [1])
+        profiles = execution_configs([
+            {"name": "serial-1proc", "backend": "serial", "processes": 1},
+            {"name": "mpi-2proc", "backend": "serial", "processes": 2},
+        ])
+        self.assertEqual([profile["name"] for profile in profiles], ["serial-1proc", "mpi-2proc"])
+        self.assertEqual([profile["processes"] for profile in profiles], [1, 2])
+        for value in ([], [{"name": "a"}, {"name": "a"}], [1], "serial"):
+            with self.subTest(value=value), self.assertRaises(ConfigurationError):
+                execution_configs(value)
 
     def test_multiple_parameters_not_limited_to_example(self):
         with tempfile.TemporaryDirectory() as temp:

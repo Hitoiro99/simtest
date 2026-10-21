@@ -17,6 +17,7 @@
 | 功能 | 状态 | 当前范围或缺口 |
 |---|---|---|
 | 案例、工况发现和参数解析 | 部分实现 | 类型、必填项、单位和派生变量已有；CLI 校验补齐默认执行参数并检查案例映射，零工况明确报错；通用取值范围约束未实现 |
+| 案例多执行配置与单命令多作业 | 已实现 | `case.yaml` 的 `execution` 支持单个映射或映射列表，`run` 按声明顺序运行全部配置并合并为一份报告；相同组合仍复用归档 |
 | 标签检索、案例依赖、通用取值范围约束 | 未实现 | 标签仅作为元数据保存 |
 | 求解器注册与版本选择 | 部分实现 | 注册、安装绑定和版本排序已集中于 solvers/registry.py，主程序与版本规则由 Adapter 提供；真实接入仍仅 OpenFOAM 12 |
 | OpenFOAM Foundation 12 接入 | 已实现 | 当前案例的串行及两进程 MPI；其他版本未完成真实验证 |
@@ -25,7 +26,7 @@
 | 唯一源网格、复制哈希和 checkMesh | 已实现 | 公共层发现唯一源资产；OpenFOAM Adapter 检查 polyMesh 必需文件，当前网格的复制哈希和 checkMesh 已验证 |
 | AICFD-NewPre 转换及多域核验 | 未实现 | 跨格式和完整多域链路未接入 |
 | Linux/WSL 本地执行 | 已实现 | 进入 Linux/WSL 后直接使用 python3 -m simtest，安装后也可用 simtest；保留日志、超时、取消和资源统计 |
-| 容器、集群调度及集成多作业调度 | 未实现 | 当前 CLI 按顺序组织多工况/多求解器作业 |
+| 容器、集群调度及集成多作业调度 | 未实现 | 当前 CLI 按 case.yaml 声明的多执行配置、多工况、多求解器顺序组织作业；容器和集群调度未实现 |
 | OpenMP/CUDA 求解后端 | 未实现 | 当前 Adapter 在启动前返回 UNSUPPORTED；MPI 已支持 |
 | 监控和残差 CSV 标准化 | 部分实现 | OpenFOAM Adapter 内的方法负责解析与标准化，保留采样边界和无效值；版本类可重载，其他求解器读取器未接入 |
 | 场结果标准化 | 部分实现 | 当前单域、reference 所需场的全部输出时刻；多域同字段及张量未覆盖 |
@@ -36,12 +37,13 @@
 | 输入、日志、标准结果及元数据归档 | 已实现 | 只发布成功且完整的不可变归档，校验标准文件可读性与清单哈希；失败现场保留在 runs |
 | 运行副本清理与去重 | 已实现 | 标准数据与归档双校验后移除整个工作区；同身份成功复用、准备校验接续、失败保留且不自动重试，损坏拒绝覆盖 |
 | 硬件和资源信息 | 部分实现 | 已记录主机指纹、CPU、OS、总内存、GPU 探测、MPI、亲和性、cgroup 与进程限制及实际耗时/峰值内存；多节点及容器真实验证未覆盖 |
-| 案例网格制备与报告测试归位 | 已实现 | 网格制备位于案例 mesh-preparation/；浏览器测试位于 tests/report/；空 tools/ 已移除 |
+| 案例网格制备与报告测试归位 | 已实现 | 网格制备位于案例 mesh-preparation/，成功后自动清理 `.build/mesh`；浏览器测试位于 tests/report/；空 tools/ 已移除 |
 | 平台代码按职责拆分 | 已实现 | 按确认方案保留 case_management/common；求解器相关逻辑集中于 solvers，jobs/analysis/archive/report 位于根目录；旧目录已移除，安装版完整链路通过 |
 | 项目代码风格与可读性约定 | 已实现 | AGENTS.md 已记录用户最终入口样式；受维护的 Python、JavaScript/CJS、CSS 及测试已统一，复杂条件式展开，保留简单值选择及用户最终入口排版 |
 | 项目 AGENTS.md 工作规则 | 已实现 | 根目录文档维护目录、测试和 Linux/WSL 入口规则；solvers/ 位置保持不变 |
 | 稳定身份哈希与重复请求复用 | 已实现 | 完整规范身份 SHA-256，物理时间和输出设置参与；创建/耗时/生成路径等不参与；完整身份比对、同作业进程锁与归档/报告去重均通过回归 |
 
+| 固定报告模板与离线 ECharts | 部分实现 | 固定模板、离线图表、工况名称取 YAML 文件名、分量/误差类型分图及完整数据展示已写入，正在进行报告和安装回归 |
 
 ## 变更记录
 
@@ -179,3 +181,68 @@
 
 - 验证：长 ID 换行修复后，最终串行/MPI 又各执行一次并保留，重复 CLI 再次均 reused=true；最终串行 ID `e8704a74c7652fa10652f77112ca01b03f3fe817e371f1545b49ed2ca69966ac`，MPI ID `3275c1b2748dfbdbbc911c0f70ce0bb7dbe6cce0dc3ac657091f0738605dea4e`。本记录前述两 ID 属于样式修复前验证，相关中间数据已按授权移除。最终保留 2 份成功归档及 3 份不同选集报告，无 runs 作业目录；根 .lock 为并发协调文件。
 - 验证：Node 24 / Edge 对最终汇总 HTML 完成全部 14 项交互检查，JavaScript 错误为 0，包含缩放、平移、图例、悬停、指标选择、筛选、全屏、SVG 导出及 390px 宽度；修复前一次窄屏失败已如实记录。最终 diff 格式检查通过，临时快照与浏览器截图交付前清理；按规则 git add 暂存，不创建提交。
+
+### 015｜2026-10-21｜固定报告框架、独立分量图与完整数据
+
+- 操作：按用户确认的方案执行，修改前 git add 保存已有改动；新增 `report_assets/{echarts.min.js,ECHARTS-LICENSE.txt,ECHARTS-NOTICE.txt,echarts-version.json}`，固定官方 ECharts 5.6.0 离线资源与 SHA-256，修改 `pyproject.toml` 将 HTML 模板、许可和版本清单纳入安装包。
+
+- 操作：修改 `report.py`、`report_assets/{report.js,report.css}`，新增固定模板 `report_assets/report.html`，完整数据输出与图表按职责留在现有模块；修改 `tests/test_report.py`、`tests/report/check_html_report.cjs` 覆盖新数据及交互。补充 `report_assets/ECHARTS-D3-LICENSE.txt`；更新 `README.md`、`AGENTS.md` 和本文件功能表。
+
+### 016｜2026-10-21｜case.yaml 多执行配置与单命令合并报告
+
+- 操作：修改 `case_management/cases.py`，新增 `execution_configs()`，接受单个映射或映射列表并逐项校验，列表为空、列表项非映射或名称重复时拒绝；`load_case()` 改用该函数校验案例执行配置。
+- 操作：修改 `jobs.py`，`prepare_job()` 从执行配置列表取首项作为基线，保留既有调用方覆盖参数与稳定身份哈希逻辑。
+- 操作：修改 `simtest.py`，移除 `run` 的 `--processes`、`--backend`、`--openmp-threads` 覆盖参数；`validate` 逐项校验全部执行配置，`run` 按 `case.yaml` 声明顺序执行全部配置，并将全部作业合并为一份报告。
+- 操作：修改 `report.py`，新增 `execution_label()`，图例优先显示执行配置的 `name`，未命名时回退为进程数和后端。
+- 操作：修改 `cases/shear-decay-2d/case.yaml`，声明 `serial-1`（1 进程）与 `mpi-2`（2 进程）两项执行配置。
+- 操作：修改 `tests/test_core.py` 增补执行配置解析测试；修改 `tests/test_cli.py` 适配多配置运行次数与合并报告断言；修改 `tests/test_jobs.py`、`tests/test_report.py` 将工况标识同步为 `Re=10`。
+- 操作：修改 `README.md` 的运行命令、执行配置示例和工况显示说明；更新本文件功能表并追加本记录。修改前已执行 `git add` 保存检查点，未创建提交。
+- 验证：WSL Ubuntu / Python 3.8.10 下 `python3 -m unittest discover -s tests -v` 共 76 项全部通过，无失败、无跳过。
+- 验证：`python3 -m simtest validate shear-decay-2d` 返回 `valid: true`，`serial-1` 与 `mpi-2` 两项配置均通过 OpenFOAM Foundation 12 校验。
+- 验证：在隔离根目录 `/tmp/simtest-profiles` 执行一次完整 `run shear-decay-2d`，两项配置各产生 1 个 SUCCEEDED 归档（job ID `be2e10fe2ee803046f0cbf6537d42e85ca1fa3295026f5895ffd7865f664fd26`、`10ca3d9d3f0c6500a18eff977e503785d8c56fa7921c1105d4e31bd1632c35f4`），只生成 1 份报告（`runs: 2`），报告 HTML 同时包含 `serial-1` 与 `mpi-2` 图例，静态图 PNG/SVG/PDF 均已生成；验证后已删除该临时目录。
+- 验证：PDF 生成期间出现 matplotlib `Font 'default' ... U+2212` 既有字体告警，未导致作业或报告失败。本次未重跑浏览器交互回归；未验证 OpenMP/CUDA 后端（适配器仍返回 UNSUPPORTED）；未修改历史归档、源网格或固定样本。
+
+### 017｜2026-10-21｜修正执行配置名称未写入作业身份
+
+- 操作：更正记录 016 的验证结论：该次报告图例实际两条均为 `serial-1`，`mpi-2` 只出现在内嵌案例数据中；原因是 `prepare_job()` 固定取配置列表首项作为基线，只覆盖 `backend`/`processes`/`openmp_threads`，未覆盖 `name`。
+- 操作：修改 `jobs.py`，`prepare_job()` 增加可选 `execution` 参数；传入时直接使用该配置（含 `name`），未传入时仍取案例首个配置并保留既有覆盖逻辑。
+- 操作：修改 `simtest.py`，`run` 将当前配置整体传入 `prepare_job(..., execution=profile)`，不再逐项覆盖 options；移除不再使用的 `copy` 导入。
+- 操作：修改 `tests/test_jobs.py` 新增名称写入身份的回归；修改 `tests/test_cli.py` 断言 `run` 依次把 `serial-1`、`mpi-2` 整体传给 `prepare_job`。
+- 操作：更新本文件并追加本记录。修改前已执行 `git add` 保存 016 对应检查点，未创建提交。
+- 验证：WSL Ubuntu / Python 3.8.10 下完整 77 项 unittest 全部通过，无失败、无跳过。
+- 验证：在隔离根目录 `/tmp/simtest-profiles` 重新运行 `run shear-decay-2d`，两个作业均 SUCCEEDED（job ID `62ded66dc82aa6c959fdea483a54de28186eb5c80698685eb12d341a1ef6d60c`、`199b14ed15873c6ac458f570473fb05bc92d117442df249d93ce35e04519485f`），生成 1 份报告（`runs: 2`），图例为 `serial-1` 与 `mpi-2`；验证后已删除该临时目录。
+- 验证：仓库内 `1c17072e…`、`1e9d89f6…` 两份归档由修复前代码生成，`execution.name` 均为 `serial-1`，未删除，作为历史产物保留。本次未重跑浏览器回归，未验证 OpenMP/CUDA 后端。
+
+### 018｜2026-10-21｜网格制备成功后自动清理 .build
+
+- 操作：修改 `cases/shear-decay-2d/mesh-preparation/create_example_mesh.py`，在网格复制与 provenance 写入成功后删除 `.build/mesh`，`.build` 为空时一并删除；删除失败仅向 stderr 打印警告，不改变已完成的制备结果。
+- 操作：新增 `tests/test_mesh.py`，用模拟的 blockMesh/checkMesh 覆盖成功清理与 checkMesh 失败保留现场两种情形。
+- 操作：更新本文件功能表并追加本记录。修改前已执行 `git add` 保存 019 检查点，未创建提交。
+- 验证：WSL Ubuntu / Python 3.8.10 下 `test_mesh.py` 2 项通过；完整 79 项 unittest 全部通过，无失败、无跳过。
+- 验证：未执行真实 blockMesh/checkMesh 重新制备（会覆盖受控源网格，当前 `cases/shear-decay-2d/polyMesh` 已存在，脚本按设计拒绝）；清理逻辑仅由模拟测试覆盖。未重跑浏览器回归，未验证 OpenMP/CUDA 后端。
+
+### 019｜2026-10-21｜对数刻度改用纯文本标签
+
+- 操作：修改 `report.py`，新增 `log_tick_label()`，静态图的对数轴改用 `FuncFormatter` 输出 `10^-3` 形式的纯文本标签，并关闭次刻度标签，避免 mathtext 使用 SimHei 缺失的 U+2212 而被替换成占位符。
+- 操作：修改 `tests/test_report.py`，新增标签格式回归。
+- 操作：更新本文件并追加本记录。修改前已执行 `git add` 保存 020 检查点，未创建提交。
+- 验证：WSL Ubuntu / Python 3.8.10 下完整 80 项 unittest 全部通过，无失败、无跳过。
+- 验证：隔离根目录 `/tmp/simtest-profiles` 运行 `run shear-decay-2d`，两个作业 SUCCEEDED、1 份报告，生成 33 个静态图文件（11 张 × PNG/SVG/PDF）；stderr 中 `does not have a glyph for '\u2212'` 计数为 0（改动前每次报告约 36 条）；验证后已删除临时目录。
+- 验证：本次残差数据近似恒定，log 轴自动缩放范围过窄，该图没有可见的十进制刻度标签；该现象由 Locator/自动缩放决定，与本次 formatter 改动无关，未在本次处理。未重跑浏览器交互回归，未验证 OpenMP/CUDA 后端。
+
+### 020｜2026-10-21｜修正极小误差时 ECharts 纵轴刻度重叠
+
+- 操作：修改 `report_assets/report.js`，`render()` 统计全部绘制点的 `dataMin` / `dataMax`；线性 y 轴改用显式 `min` / `max`（5% 留白，非负数据下限不小于 0，全等数据按 10% 或 0.5 展开），避免 ECharts 对约 `1e-13` 量级数据把自动范围算成 `[0, 0]` 导致刻度标签重叠；对数轴保持原有显式范围。
+- 操作：更新本文件并追加本记录。修改前已执行 `git add` 保存 021 检查点，未创建提交。
+- 验证：`node --check report_assets/report.js` 通过。
+- 验证：用归档 `2839e8a1…`、`85348775…` 重新生成报告 `artifacts/shear-decay-2d/reports/407543b942e5777bcef8846fa672a94a5eeff057df27d97cc5e99bc9abcd6ce6/report.html`；Edge headless 打开后读取目标图（velocity / y / 归一化误差）：y 轴 extent 为 `0, 1.5129551467293905e-12`（改动前为 `0, 0`），刻度标签分别位于 y=356、291.36、226.72、162.07、97.43、32.79，互不重叠。
+- 验证：完整 80 项 unittest 全部通过，无失败、无跳过。
+- 验证：`tests/report/check_html_report.cjs` 在改动后的报告和改动前的 `9b14b260…` 报告上都于 `/步/` 断言处失败（实际 x 轴标题为 `Step`），属于本次改动前已存在的测试与实现不一致，未在本次修改；因此该浏览器交互回归未通过，不能作为本次修复的验证。未验证 OpenMP/CUDA 后端。
+
+### 021｜2026-10-21｜修正浏览器回归的 x 轴标题断言
+
+- 操作：修改 `tests/report/check_html_report.cjs`，残差图 x 轴标题断言由 `/步/` 改为 `/Step|步/`，与当前 `report.py` 输出的 `Step` 一致，同时兼容中文标题。
+- 操作：更新本文件并追加本记录。修改前已执行 `git add` 保存 022 检查点，未创建提交。
+- 验证：对新报告 `407543b9…` 运行 `check_html_report.cjs`，x 轴标题断言通过，随后在 `Box zoom did not change range`（第 188 行）失败。
+- 验证：对改动前的旧报告 `9b14b260…` 运行同一脚本，同样在 box zoom 断言失败；该失败为本次修改前已存在的问题，与本次断言修改无关。浏览器交互回归仍未通过。
+- 验证：完整 80 项 unittest 全部通过，无失败、无跳过（该 JS 脚本不参与 unittest）。未验证 OpenMP/CUDA 后端。

@@ -10,7 +10,7 @@ from types import SimpleNamespace
 from case_management.cases import (
     discover_cases,
     discover_conditions,
-    execution_config,
+    execution_configs,
     load_case,
     load_condition,
 )
@@ -61,9 +61,6 @@ def parser():
     run.add_argument("--all-conditions", action="store_true")
     run.add_argument("--solver", action="append")
     run.add_argument("--config")
-    run.add_argument("--processes", type=int)
-    run.add_argument("--backend", choices=["serial", "openmp", "cuda"])
-    run.add_argument("--openmp-threads", type=int)
     run.add_argument("--timeout", type=positive, default=300)
     run.add_argument("--heartbeat-timeout", type=positive, default=120)
     run.add_argument("--prepare-only", action="store_true")
@@ -128,16 +125,17 @@ def main(argv=None):
             _, _, info, adapter = select_install(root, args.solver, args.config)
             chain = choose(path, adapter)
             template_files(chain, adapter)
-            execution = execution_config(case.get("execution", {}))
+            profiles = execution_configs(case.get("execution", {}))
             for condition in conditions:
                 load_condition(path, case, condition)
-                context = SimpleNamespace(
-                    case_path=path,
-                    case=case,
-                    execution=execution,
-                    info=info,
-                )
-                adapter.validate(context)
+                for execution in profiles:
+                    context = SimpleNamespace(
+                        case_path=path,
+                        case=case,
+                        execution=execution,
+                        info=info,
+                    )
+                    adapter.validate(context)
 
             result = {
                 "valid": True,
@@ -164,17 +162,21 @@ def main(argv=None):
             if not selectors:
                 selectors = ["OpenFOAM@latest"]
 
+            case_definition = load_case(root / "cases" / args.case)
+            profiles = execution_configs(case_definition.get("execution", {}))
+
             results = []
             for condition in conditions:
                 for selector in selectors:
-                    context, adapter = prepare_job(
-                        root, args.case, condition, selector, args,
-                    )
-                    item = run_job(
-                        context, adapter, args.prepare_only,
-                    )
-                    results.append(item)
-                    print(json.dumps(item, ensure_ascii=False), flush=True)
+                    for profile in profiles:
+                        context, adapter = prepare_job(
+                            root, args.case, condition, selector, args, execution=profile,
+                        )
+                        item = run_job(
+                            context, adapter, args.prepare_only,
+                        )
+                        results.append(item)
+                        print(json.dumps(item, ensure_ascii=False), flush=True)
 
             if not args.prepare_only:
                 from report import report

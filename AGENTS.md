@@ -15,7 +15,7 @@ Applies repository-wide. Subdirectory `AGENTS.md` requirements are additive and 
 - simtest.py：根目录 CLI 入口，解析参数并调用业务模块；保持 python3 -m simtest 和已安装 simtest 命令。
 - case_management/：公共案例、工况、参数解析，唯一源网格发现及模板选择、继承和渲染；不维护求解器原生文件布局和网格内部规则。
 - jobs.py：创建独立作业、收集追溯信息、记录状态并组织完整运行流程；analysis.py：公共参考偏差与误差统计。
-- archive.py：标准结果校验、归档查询、完整性校验和清理边界；report.py：跨作业报告、图表和汇总输出；report_assets/：可安装的离线 JS/CSS 资源包。
+- archive.py：标准结果校验、归档查询、完整性校验和清理边界；report.py：跨作业报告、图表和汇总输出；report_assets/：可安装的固定 HTML 模板、离线 ECharts/JS/CSS 和第三方许可资源包；第三方发布文件保持原样。
 - common/：公共文件、单位、表达式及平台版本工具，不保存求解器固有规则。
 - solvers/：受信 Python 包；base.py 保存公共进程监督、工具定位与短命令执行，registry.py 保存注册、环境加载与安装绑定，models.py 与 exceptions.py 保存公共数据和异常；不得擅自迁入其他包。
 - solvers/<solver>/adapter.py 和 versions/：内核公共行为及稀疏版本变更点；监控解析、场获取和导出回退由 Adapter 方法实现，版本类按变化重载，不保存具体案例物理参数。OpenFOAM/vtk_bridge.py 使用独立 pvpython 读取并写出验证场。

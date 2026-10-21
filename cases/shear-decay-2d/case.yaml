@@ -4,8 +4,13 @@ title: 二维层流速度扩散
 tags: [incompressible, laminar, transient, analytical]
 
 execution:
-  backend: serial
-  processes: 1
+  - name: serial-1proc
+    backend: serial
+    processes: 1
+
+  - name: mpi-2proc
+    backend: serial
+    processes: 2
 
 constants:
   kinematic_viscosity:

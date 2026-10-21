@@ -19,4 +19,4 @@ py-modules = ["simtest", "jobs", "analysis", "archive", "report"]
 include = ["case_management*", "common*", "solvers*", "report_assets*"]
 
 [tool.setuptools.package-data]
-report_assets = ["*.js", "*.css"]
+report_assets = ["*.js", "*.css", "*.html", "*.txt", "*.json"]

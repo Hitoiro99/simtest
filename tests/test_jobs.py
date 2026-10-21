@@ -81,7 +81,7 @@ class JobTests(unittest.TestCase):
             '  delta_t: {type: real, required: true}\n'
             '  output_interval: {type: integer, required: true}\n', encoding="utf-8"
         )
-        self.condition_file = self.case_path / "conditions" / "default.yaml"
+        self.condition_file = self.case_path / "conditions" / "Re=10.yaml"
         self.write_condition()
         executable = self.root / "solver"
         executable.write_text("solver-binary-v1", encoding="utf-8")
@@ -114,7 +114,15 @@ class JobTests(unittest.TestCase):
         )
 
     def prepare(self):
-        return jobs.prepare_job(self.root, "sample", "default", "TestSolver@1", self.options)[0]
+        return jobs.prepare_job(self.root, "sample", "Re=10", "TestSolver@1", self.options)[0]
+
+    def test_requested_execution_profile_name_is_recorded(self):
+        profile = {"name": "mpi-2proc", "backend": "serial", "processes": 2, "openmp_threads": 1}
+        context = jobs.prepare_job(
+            self.root, "sample", "Re=10", "TestSolver@1", self.options, execution=profile
+        )[0]
+        self.assertEqual(context.manifest["execution"]["name"], "mpi-2proc")
+        self.assertEqual(context.manifest["execution"]["processes"], 2)
 
     def test_identity_is_stable_and_prepare_has_no_side_effect(self):
         first = self.prepare()

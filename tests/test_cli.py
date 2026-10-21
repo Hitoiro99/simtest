@@ -93,7 +93,12 @@ class CliTests(unittest.TestCase):
         self.assertFalse((self.root / "runs").exists())
 
     def test_run_reports_failed_jobs_and_returns_failure(self):
-        results = [{"job_id": "job-a", "status": "SUCCEEDED"}, {"job_id": "job-b", "status": "CRASHED"}]
+        results = [
+            {"job_id": "job-a", "status": "SUCCEEDED"},
+            {"job_id": "job-b", "status": "CRASHED"},
+            {"job_id": "job-c", "status": "SUCCEEDED"},
+            {"job_id": "job-d", "status": "SUCCEEDED"},
+        ]
         with patch("simtest.prepare_job", return_value=(object(), object())), patch(
             "simtest.run_job", side_effect=results
         ), patch("report.report", return_value={"report": "report.html"}) as report:
@@ -102,15 +107,20 @@ class CliTests(unittest.TestCase):
             )
         self.assertEqual(code, 1)
         self.assertEqual(stderr, "")
-        self.assertEqual(len(stdout.splitlines()), 3)
-        report.assert_called_once_with(self.root, "shear-decay-2d", ["job-a", "job-b"])
+        self.assertEqual(len(stdout.splitlines()), 5)
+        report.assert_called_once_with(self.root, "shear-decay-2d", ["job-a", "job-b", "job-c", "job-d"])
 
     def test_prepare_only_does_not_generate_report(self):
-        with patch("simtest.prepare_job", return_value=(object(), object())), patch(
+        with patch("simtest.prepare_job", return_value=(object(), object())) as prepare, patch(
             "simtest.run_job", return_value={"job_id": "prepared", "status": "QUEUED"}
         ), patch("report.report") as report:
             code, stdout, stderr = self.invoke("run", "shear-decay-2d", "--prepare-only")
         self.assertEqual(code, 0)
         self.assertEqual(stderr, "")
-        self.assertEqual(json.loads(stdout)["status"], "QUEUED")
+        lines = [json.loads(line) for line in stdout.splitlines()]
+        self.assertEqual([item["status"] for item in lines], ["QUEUED", "QUEUED"])
+        self.assertEqual(
+            [call.kwargs["execution"]["name"] for call in prepare.call_args_list],
+            ["serial-1proc", "mpi-2proc"],
+        )
         report.assert_not_called()

@@ -210,14 +210,15 @@ input:focus-visible {
 
 .plot {
     position: relative;
-    max-width: 1100px;
+    width: 100%;
+    height: 460px;
+    min-width: 0;
     margin: auto
 }
 
 .plot svg {
     display: block;
     width: 100%;
-    height: auto;
     touch-action: none;
     user-select: none
 }
@@ -280,7 +281,7 @@ input:focus-visible {
 }
 
 .chart:fullscreen .plot {
-    max-width: 1400px
+    height: max(460px, calc(100vh - 260px))
 }
 
 .static-chart {
@@ -330,11 +331,7 @@ input[type=search] {
     }
 
     .plot {
-        overflow: auto
-    }
-
-    .plot svg {
-        min-width: 580px
+        height: 420px
     }
 
     .tooltip {
@@ -383,4 +380,16 @@ input[type=search] {
     body {
         background: white
     }
+}
+
+.chart-tooltip {
+    max-width: 460px;
+    overflow-wrap: anywhere;
+    white-space: normal;
+    font-size: 12px;
+}
+
+.chart-tooltip strong {
+    display: block;
+    margin-top: 8px;
 }
