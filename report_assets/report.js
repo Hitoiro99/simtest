@@ -343,6 +343,7 @@
             };
             add.onclick = () => this.row(list);
             this.row(list);
+            this.apply('all', list, '', 'asc');
         }
         row(list) {
             const row = element('div', null, list, {class: 'filter-row'});
@@ -404,9 +405,10 @@
         }
     }
 
-    document.querySelectorAll('[data-table-id]').forEach(table => {
-        const host = document.querySelector('[data-filter-for="' + table.dataset.tableId + '"]');
-        if (host) {
+    document.querySelectorAll('[data-table-id]').forEach(wrapper => {
+        const table = wrapper.querySelector('table');
+        const host = document.querySelector('[data-filter-for="' + wrapper.dataset.tableId + '"]');
+        if (host && table) {
             new DataTable(table, host);
         }
     });
