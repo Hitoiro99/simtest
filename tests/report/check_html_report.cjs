@@ -120,7 +120,7 @@ async function main() {
         assert.equal(await evaluate('echarts.version'), '5.6.0');
         assert.ok(charts.every(chart => ['analytical', 'monitor', 'residual'].includes(chart.kind)),
             'Only analytical, monitor and residual charts are allowed');
-        assert.ok(charts.every(chart => /Step|步/.test(chart.xlabel)), 'Every chart must use the step axis');
+        assert.ok(charts.every(chart => /Step/.test(chart.xlabel)), 'Every chart must use the step axis');
         const fieldCharts = charts.filter(chart => chart.kind === 'analytical');
         assert.ok(fieldCharts.length > 0, 'Use a report containing field comparisons');
         assert.equal(charts.filter(chart => chart.kind === 'monitor').length, 0,

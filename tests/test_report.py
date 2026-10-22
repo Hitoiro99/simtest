@@ -67,7 +67,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(len(charts), 1)
         self.assertEqual(charts[0]["series"][0]["points"][1]["y"], None)
         self.assertEqual(charts[0]["series"][0]["points"][1]["raw"], "nan")
-        self.assertEqual(charts[0]["xlabel"], "迭代步")
+        self.assertEqual(charts[0]["xlabel"], "Step")
         self.assertEqual([point["x"] for point in charts[0]["series"][0]["points"]], [0, 1, 2])
         self.assertEqual(monitor_rows("example", runs)[0]["last_value"], "inf")
 

@@ -314,7 +314,7 @@ def build_charts(runs):
                     "title": name,
                     "description": declaration.get("display_name", name),
                     "unit": unit,
-                    "xlabel": "迭代步",
+                    "xlabel": "Step",
                     "ylabel": name + " [" + unit + "]",
                     "yscale": "log" if residual else "linear",
                     "series": [],
@@ -363,7 +363,7 @@ def build_charts(runs):
                 ),
                 "description": "按实际保存迭代步比较；均值和 RMS 按单元体积加权。",
                 "unit": key[5], "component": row["component"], "error_kind": error_kind,
-                "xlabel": "迭代步", "ylabel": "归一化误差 [%]", "yscale": "linear", "series": [],
+                "xlabel": "Step", "ylabel": "归一化误差 [%]", "yscale": "linear", "series": [],
             })
             series_label = label(m)
             series = next((s for s in chart["series"] if s["label"] == series_label), None)

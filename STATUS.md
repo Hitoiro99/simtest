@@ -271,3 +271,9 @@
 - 验证：WSL Ubuntu / Python 3.8.10 下报告聚焦测试 15 项及完整 85 项 unittest 全部通过，无失败、无跳过；`report.py` 语法检查和两份 JavaScript/CJS 语法检查通过。
 - 验证：从现有两份 Couette 归档生成最终报告 `artifacts/couette-2d/reports/31de8c3d8ffaf9843c4dbd1be3e54f33f87148c68dd35c004e10eb8af8ab9a2b/report.html`，包含 5 张解析解归一化偏差图、2 张残差图和 0 张普通监控图；HTML 无绝对误差字段及逐点明细区，保留最后一步结果区。归档文件集合生成前后 SHA-256 摘要均为 `7400e5499812e89a0637fbbaf500b8986be28d42e5120f24107a6dedca63502b`，归档未被修改。
 - 验证：Edge 无头浏览器在沙箱外完成页面加载及本次新增的图表类型、迭代步横轴、归一化误差和页面精简前置断言，随后仍在既有 `Box zoom did not change range` 断言失败；该问题在记录 020、021 和 023 中已存在，本次没有修改框选缩放机制，浏览器全量回归不能记为通过。未运行新求解作业，未验证 OpenMP/CUDA 或 OpenFOAM v2506。
+
+### 025｜2026-10-22｜图表横轴标签统一为 Step
+
+- 目的：按用户要求把图表横轴标签由“迭代步”改为英文 `Step`，语义不变。
+- 操作：修改 `report.py` 两处 `xlabel` 为 `Step`；修改 `tests/test_report.py` 和 `tests/report/check_html_report.cjs` 的断言；修改 `README.md` 两处横轴说明。新增、删除、移动/重命名受维护源文件：无。
+- 验证：WSL Ubuntu / Python 3.8.10 下报告测试 15 项及完整 85 项 unittest 全部通过，无失败、无跳过；未重新生成报告，未运行浏览器回归，未验证 OpenMP/CUDA 或 OpenFOAM v2506。
