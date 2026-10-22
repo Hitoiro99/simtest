@@ -262,3 +262,12 @@
 - 验证：`list cases` 仅发现 `couette-2d/Re=10`，`validate couette-2d` 返回 `valid: true`；`prepare-only` 生成串行和 MPI 两个稳定作业，随后完整运行均为 `SUCCEEDED`。每份归档包含 1001 条各监控记录、11 个实际时刻的速度和压力共 22 个 VTU、55 条可用比较且无 `UNAVAILABLE`；速度最大绝对误差为 `0.00173914959470683 m/s`。
 - 验证：重复运行返回相同作业 ID，两个作业及同一报告均为 `reused: true`，未新增重复数据。报告位于 `artifacts/couette-2d/reports/bae3642008bfa587694a88da00db089487b54971b1200914c99ed290027cd969/report.html`。
 - 验证：浏览器回归通过加载和前置检查，但仍在既有 `Box zoom did not change range` 断言失败；该问题在案例替换前已有记录，本次未修改报告交互代码，不能将浏览器全量回归记为通过。未验证 OpenMP/CUDA 后端及 OpenFOAM v2506。
+
+### 024｜2026-10-22｜精简报告展示并统一迭代步横轴
+
+- 目的：报告页面仅展示解析解对比、监控量和残差三类图像，所有图像使用迭代步横轴；页面只列最后一步数值，不展示绝对误差或逐点数值明细，同时保持归档数据不变。
+- 操作：修改 `report.py`，使用已验证的场时间元数据将解析场输出映射到迭代步；有解析场参考时隐藏普通监控图，残差独立保留；解析解对比仅构造归一化误差图，并生成最后一步监控量和解析偏差摘要。修改 `report_assets/{report.html,report.js,report.css}`，移除逐点明细、绝对误差和完整元数据展示，保留诊断摘要、归档文件链接及离线交互；报告目录中的既有 CSV/JSON 输出和归档协议未改变。
+- 操作：修改 `tests/test_report.py`、`tests/report/check_html_report.cjs`，覆盖三类图像、解析/监控互斥、统一步数轴、最终值摘要和页面隐藏绝对误差及逐点明细；修改 `README.md` 同步报告使用说明。新增、删除、移动/重命名受维护源文件：无。
+- 验证：WSL Ubuntu / Python 3.8.10 下报告聚焦测试 15 项及完整 85 项 unittest 全部通过，无失败、无跳过；`report.py` 语法检查和两份 JavaScript/CJS 语法检查通过。
+- 验证：从现有两份 Couette 归档生成最终报告 `artifacts/couette-2d/reports/31de8c3d8ffaf9843c4dbd1be3e54f33f87148c68dd35c004e10eb8af8ab9a2b/report.html`，包含 5 张解析解归一化偏差图、2 张残差图和 0 张普通监控图；HTML 无绝对误差字段及逐点明细区，保留最后一步结果区。归档文件集合生成前后 SHA-256 摘要均为 `7400e5499812e89a0637fbbaf500b8986be28d42e5120f24107a6dedca63502b`，归档未被修改。
+- 验证：Edge 无头浏览器在沙箱外完成页面加载及本次新增的图表类型、迭代步横轴、归一化误差和页面精简前置断言，随后仍在既有 `Box zoom did not change range` 断言失败；该问题在记录 020、021 和 023 中已存在，本次没有修改框选缩放机制，浏览器全量回归不能记为通过。未运行新求解作业，未验证 OpenMP/CUDA 或 OpenFOAM v2506。

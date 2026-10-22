@@ -11,7 +11,7 @@
         <div class="eyebrow">SIMTEST / VERIFIED ARCHIVES</div>
         <h1>{{ case_id }}</h1>
         <p>仿真测试报告 · {{ created }} · {{ runs | length }} 个作业</p>
-        <nav><a href="#jobs">作业状态</a><a href="#charts">交互图表</a><a href="#observations">完整数值</a><a href="#sources">追溯与下载</a></nav>
+        <nav><a href="#jobs">作业状态</a><a href="#charts">交互图表</a><a href="#results">最终结果</a><a href="#sources">追溯与下载</a></nav>
     </header>
     <main>
         <div class="notice">SUCCEEDED 表示执行和必需结果完整，不代表收敛或数值通过。归一化尺度不是验收容差。</div>
@@ -21,41 +21,36 @@
         </section>
         <section id="charts">
             <h2>交互图表</h2>
-            <p>缩放、平移、图例筛选和图片导出由离线 Apache ECharts 5.6.0 提供。每个分量、误差类型分别展示。</p>
-            <p>曲线展示每个工况/求解器选集中最新版本，完整数值保留全部所选作业与采样点。无效值保留并显示为断点。</p>
-            <p>残差横轴为迭代步（标准记录 step，瞬态案例对应时间步序号），纵轴默认 log₁₀ 对数刻度；不是内层压力迭代次数。非正数不能显示在对数轴，原值仍保留在明细，可切换线性轴查看。</p>
+            <p>图表仅分为解析解对比、监控量和残差三类，横轴统一为迭代步。存在解析场参考时显示解析解对比，不再同时显示普通监控量；残差始终独立显示。</p>
+            <p>解析解对比只显示归一化误差，每个分量单独成图，可切换最大值、体积加权平均值和体积加权 RMS。绝对误差不在页面展示。</p>
+            <p>残差纵轴默认使用 log₁₀ 对数刻度；非正数在对数轴上显示为断点，可切换为线性轴查看。缩放、平移、图例筛选和图片导出由离线 Apache ECharts 5.6.0 提供。</p>
             <div id="chart-list"></div>
             <noscript>{% for chart in charts %}<img class="static-chart" alt="{{ chart.title }}" src="figures/{{ chart.id }}.png">{% endfor %}</noscript>
         </section>
-        <section id="observations">
-            <h2>完整数值</h2>
-            <label>筛选明细 <input id="table-filter" type="search" placeholder="作业 ID、字段、分量或状态"></label>
-            <h3>监控最后记录与参考比较</h3>
-            <p>最后值无效时保留原值，不回退到更早有效值；NO_REFERENCE 表示没有监控参考值。</p>
-            <div class="filterable">{{ summary_table | safe }}</div>
-            <details><summary>全部监控采样记录</summary><div class="filterable">{{ monitors_table | safe }}</div></details>
-            <h3>全部时刻的解析场偏差</h3>
-            <p>每个方向与模长分别统计；absolute_error 为绝对误差，normalized_error 为归一化比值（图中乘 100 显示百分数）。各项包含 max、mean、rms 和各自最大误差位置，均值与 RMS 按体积加权。— 表示未提供，不代表零。</p>
-            <div class="filterable">{{ fields_table | safe }}</div>
+        <section id="results">
+            <h2>最后一步结果</h2>
+            <p>页面只列出最后一步数值，完整过程通过上方曲线判断。最后值无效时保留原值，不回退到更早的有效值。</p>
+            <h3>监控量最终值</h3>
+            {{ monitors_table | safe }}
+            <h3>解析解最终归一化偏差</h3>
+            <p>每个方向与模长分别统计，数值单位为百分比；均值和 RMS 按单元体积加权。绝对误差不在页面展示。</p>
+            {{ fields_table | safe }}
         </section>
         <section id="sources">
-            <h2>完整追溯与下载</h2>
-            <p><a href="summary.json" download>完整元数据与场样本 JSON</a> · <a href="summary.csv" download>监控汇总 CSV</a> · <a href="monitors.csv" download>全量监控 CSV</a> · <a href="field_errors.csv" download>全量场偏差 CSV</a></p>
-            <p>以下完整记录包含案例、工况、参数、硬件、运行配置、版本与哈希、状态历史、诊断及参考定义；source_manifest 保留归档原记录，外层 comparisons 为从归档 CSV/VTU 计算的报告数据，field_samples 保留全部标准场样本。</p>
+            <h2>追溯与下载</h2>
+            <p>页面不展开逐点数据。原始输入、日志、标准结果、硬件、运行配置、版本与哈希仍保存在对应作业归档中。</p>
             {% for detail in details %}
-            <details><summary>{{ detail.condition }} · {{ detail.job_id }} · 完整数据与诊断</summary>
-                <pre>{{ detail.metadata }}</pre>
-                <details><summary>归档/现场文件清单（输入、日志与标准结果）</summary>
-                    <ul>{% for link in detail.links %}<li><a href="{{ link.url }}">{{ link.name }}</a></li>{% endfor %}</ul>
-                </details>
+            <details><summary>{{ detail.condition }} · {{ detail.job_id }} · 归档文件</summary>
+                <h3>诊断与日志摘要</h3>
+                <pre>{{ detail.diagnostics }}</pre>
+                <ul>{% for link in detail.links %}<li><a href="{{ link.url }}">{{ link.name }}</a></li>{% endfor %}</ul>
             </details>
             {% endfor %}
-            <p>完整 HTML 内嵌图表、样本和元数据；下载及归档文件链接需要保留同目录导出文件和相对归档路径。</p>
             {% for chart in charts %}<p>{{ chart.title }}：{% for ext in ('png', 'svg', 'pdf') %}<a href="figures/{{ chart.id }}.{{ ext }}" download>{{ ext | upper }}</a> {% endfor %}</p>{% endfor %}
             <p>Apache ECharts 5.6.0：<a href="ECHARTS-LICENSE.txt">LICENSE</a> · <a href="ECHARTS-NOTICE.txt">NOTICE</a> · <a href="ECHARTS-D3-LICENSE.txt">D3 LICENSE</a></p>
         </section>
     </main>
-    <footer>SIMTEST · 全量记录 / 可追溯归档 / 离线报告</footer>
+    <footer>SIMTEST · 最终结果 / 可追溯归档 / 离线报告</footer>
     <script id="chart-data" type="application/json">{{ payload | safe }}</script>
     <script>{{ echarts | safe }}</script>
     <script>{{ js | safe }}</script>

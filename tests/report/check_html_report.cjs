@@ -118,22 +118,30 @@ async function main() {
         assert.equal(await evaluate('window.simtestCharts.length'), charts.length);
         assert.equal(await evaluate('document.querySelectorAll(".chart").length'), charts.length);
         assert.equal(await evaluate('echarts.version'), '5.6.0');
-        const fieldCharts = charts.filter(chart => chart.kind === 'field');
+        assert.ok(charts.every(chart => ['analytical', 'monitor', 'residual'].includes(chart.kind)),
+            'Only analytical, monitor and residual charts are allowed');
+        assert.ok(charts.every(chart => /Step|步/.test(chart.xlabel)), 'Every chart must use the step axis');
+        const fieldCharts = charts.filter(chart => chart.kind === 'analytical');
         assert.ok(fieldCharts.length > 0, 'Use a report containing field comparisons');
+        assert.equal(charts.filter(chart => chart.kind === 'monitor').length, 0,
+            'Analytical and monitor charts must not coexist');
         for (const chart of fieldCharts) {
             assert.ok(chart.component, 'Each field chart must identify one component');
-            assert.ok(['absolute_error', 'normalized_error'].includes(chart.error_kind));
+            assert.equal(chart.error_kind, 'normalized_error');
             for (const series of chart.series) {
                 for (const point of series.points) {
                     assert.ok(Object.keys(point.metrics).every(key => key.startsWith(chart.error_kind + '.')),
-                        'Different error types must not share a chart');
+                        'Only normalized error metrics may be displayed');
                 }
             }
         }
         for (const component of ['x', 'y', 'z', 'magnitude']) {
-            assert.ok(fieldCharts.some(chart => chart.component === component && chart.error_kind === 'absolute_error'));
-            assert.ok(fieldCharts.some(chart => chart.component === component && chart.error_kind === 'normalized_error'));
+            assert.ok(fieldCharts.some(
+                chart => chart.component === component && chart.error_kind === 'normalized_error'
+            ));
         }
+        assert.equal(await evaluate('document.body.textContent.includes("完整数值")'), false);
+        assert.equal(await evaluate('document.body.textContent.includes("absolute_error")'), false);
         const residualIndex = charts.findIndex(chart => chart.title.includes('residual_p'));
         assert.ok(residualIndex >= 0, 'Missing pressure residual');
         const residual = charts[residualIndex];
@@ -209,22 +217,23 @@ async function main() {
         await evaluate(state + '.instance.dispatchAction({type:"showTip",seriesIndex:0,dataIndex:999})');
         await settle();
         assert.ok(await evaluate(card + '.textContent.includes("1000")'), 'Hover must show original step');
-        const fieldIndex = charts.findIndex(chart => chart.kind === 'field');
+        const fieldIndex = charts.findIndex(chart => chart.kind === 'analytical');
         const fieldState = 'window.simtestCharts[' + fieldIndex + ']';
-        const metricOptions = await evaluate('Array.from(' + fieldState + '.card.querySelector("select[aria-label=误差统计量]").options).map(o=>o.value)');
+        const metricOptions = await evaluate(
+            'Array.from(' + fieldState + '.card.querySelector("select[aria-label=误差统计量]").options).map(o=>o.value)'
+        );
         assert.deepEqual(metricOptions, ['max', 'mean', 'rms']);
         const rms = charts[fieldIndex].error_kind + '.rms';
         assert.ok(metricOptions.includes('rms'));
-        await evaluate('(()=>{const s=' + fieldState + '.card.querySelector("select[aria-label=误差统计量]");s.value=' + JSON.stringify('rms') + ';s.dispatchEvent(new Event("change"))})()');
+        await evaluate(
+            '(()=>{const s=' + fieldState + '.card.querySelector("select[aria-label=误差统计量]");s.value='
+            + JSON.stringify('rms') + ';s.dispatchEvent(new Event("change"))})()'
+        );
         const plotted = await evaluate(fieldState + '.instance.getOption().series[0].data');
         const expected = charts[fieldIndex].series[0].points.map(point => point.metrics[rms]);
         assert.deepEqual(plotted.map(point => Array.isArray(point) ? point[1] : point.value[1]), expected);
-        const rowCount = await evaluate('document.querySelectorAll(".filterable tbody tr:not([hidden])").length');
-        assert.ok(rowCount > 0);
-        await evaluate('(()=>{const f=document.getElementById("table-filter");f.value="not-a-job";f.dispatchEvent(new Event("input"))})()');
-        assert.equal(await evaluate('document.querySelectorAll(".filterable tbody tr:not([hidden])").length'), 0);
-        await evaluate('(()=>{const f=document.getElementById("table-filter");f.value="";f.dispatchEvent(new Event("input"))})()');
-        assert.equal(await evaluate('document.querySelectorAll(".filterable tbody tr:not([hidden])").length'), rowCount);
+        assert.ok(await evaluate('document.querySelectorAll("#results tbody tr").length > 0'));
+        assert.equal(await evaluate('document.getElementById("table-filter")'), null);
         await click('fullscreen');
         assert.ok(await evaluate('document.fullscreenElement!==null'));
         await evaluate('document.exitFullscreen()');
@@ -256,9 +265,10 @@ async function main() {
         assert.deepEqual(networkRequests, [], 'Offline report attempted external network requests');
         console.log(JSON.stringify({
             report, charts: charts.length,
-            checks: ['offline ECharts', 'separate components and errors', 'all residual steps', 'step/log defaults',
+            checks: ['offline ECharts', 'three chart kinds', 'step axes', 'normalized analytical errors',
+                'final-step tables', 'all residual steps', 'step/log defaults',
                 'button zoom', 'box zoom', 'pan', 'wheel zoom', 'reset', 'tail view', 'legend', 'axis switch',
-                'hover', 'metric selection', 'table filter', 'fullscreen', 'SVG export', 'mobile width'],
+                'hover', 'metric selection', 'fullscreen', 'SVG export', 'mobile width'],
             javascriptErrors: errors.length, externalRequests: networkRequests.length
         }));
         await call('Browser.close');

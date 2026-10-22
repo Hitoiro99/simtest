@@ -9,7 +9,7 @@ from unittest.mock import patch
 from archive import archived_runs, manifest_digest
 from simtest import parser
 from common.io import atomic_json, inventory
-from report import build_charts, log_tick_label, monitor_rows, render_html, report
+from report import build_charts, field_step, final_field_rows, log_tick_label, monitor_rows, render_html, report
 from solvers.exceptions import ConfigurationError, PostprocessError
 
 
@@ -22,6 +22,7 @@ def fixture():
         "execution": {"backend": "serial", "processes": 1},
         "case": {"monitors": {"u": {"unit": "m/s"}}},
         "condition": {},
+        "solver_time_axis": {"start": 0, "steps": [1, 2]},
         "monitors": {
             "u": [{"step": 0, "time": 0, "value": 1}, {"step": 1, "time": 1, "value": "nan", "quality": "invalid"}]
         },
@@ -63,10 +64,11 @@ class ReportTests(unittest.TestCase):
         m["monitors"]["u"].append({"step": 2, "time": None, "value": "inf"})
         runs = [(Path("archive"), m, {"status": "SUCCEEDED"})]
         charts = build_charts(runs)
-        self.assertEqual(len(charts), 2)
+        self.assertEqual(len(charts), 1)
         self.assertEqual(charts[0]["series"][0]["points"][1]["y"], None)
         self.assertEqual(charts[0]["series"][0]["points"][1]["raw"], "nan")
-        self.assertEqual(charts[1]["xlabel"], "Step")
+        self.assertEqual(charts[0]["xlabel"], "迭代步")
+        self.assertEqual([point["x"] for point in charts[0]["series"][0]["points"]], [0, 1, 2])
         self.assertEqual(monitor_rows("example", runs)[0]["last_value"], "inf")
 
     def test_latest_version_uses_solver_rule_without_installation(self):
@@ -109,12 +111,15 @@ class ReportTests(unittest.TestCase):
             dict(row, field="other"),
             dict(row, reference_id="r2"),
         ]
-        fields = [c for c in build_charts([(Path("archive"), m, {"status": "SUCCEEDED"})]) if c["kind"] == "field"]
-        self.assertEqual(len(fields), 8)
+        charts = build_charts([(Path("archive"), m, {"status": "SUCCEEDED"})])
+        fields = [chart for chart in charts if chart["kind"] == "analytical"]
+        self.assertEqual(len(fields), 4)
         points = fields[0]["series"][0]["points"]
         self.assertEqual([p["y"] for p in points], [2, None, 2])
+        self.assertEqual([p["x"] for p in points], [0, 1, 2])
         self.assertEqual(points[0]["metrics"]["normalized_error.mean"], 1)
-        self.assertEqual(fields[1]["series"][0]["points"][0]["metrics"]["absolute_error.mean"], 0.1)
+        self.assertNotIn("absolute_error.mean", points[0]["metrics"])
+        self.assertFalse(any(chart["kind"] == "monitor" for chart in charts))
 
     def test_components_and_error_types_have_independent_charts(self):
         manifest = fixture()
@@ -125,11 +130,32 @@ class ReportTests(unittest.TestCase):
             for component in ("x", "y", "z", "magnitude")
         ]
         charts = build_charts([(Path("archive"), manifest, {"status": "SUCCEEDED"})])
-        fields = [chart for chart in charts if chart["kind"] == "field"]
-        self.assertEqual(len(fields), 8)
+        fields = [chart for chart in charts if chart["kind"] == "analytical"]
+        self.assertEqual(len(fields), 4)
         self.assertEqual({(chart["component"], chart["error_kind"]) for chart in fields},
-                         {(component, kind) for component in ("x", "y", "z", "magnitude")
-                          for kind in ("absolute_error", "normalized_error")})
+                         {(component, "normalized_error") for component in ("x", "y", "z", "magnitude")})
+        self.assertFalse(any(chart["kind"] == "monitor" for chart in charts))
+
+    def test_field_step_uses_verified_time_metadata_and_final_summary(self):
+        manifest = fixture()
+        manifest["field_reader"] = {
+            "times": [
+                {"time": 0, "provenance": {"kind": "native_controlDict_startTime"}},
+                {"time": 1, "provenance": {"kind": "native_time_dictionary", "step": 100}},
+            ]
+        }
+        comparison = {
+            "domain": "fluid", "field": "velocity", "component": "x", "reference_id": "r", "time": 1,
+            "unit": "m/s", "status": "AVAILABLE", "absolute_error": {"max": 0.2},
+            "normalized_error": {"max": 0.02, "mean": 0.01, "rms": 0.015},
+        }
+        manifest["comparisons"]["fields"] = [comparison]
+        runs = [(Path("archive"), manifest, {"status": "SUCCEEDED"})]
+        self.assertEqual(field_step(manifest, 1), 100)
+        row = final_field_rows(runs)[0]
+        self.assertEqual(row["step"], 100)
+        self.assertEqual(row["max_percent"], 2)
+        self.assertNotIn("absolute_error", row)
 
     def test_residual_has_step_axis_log_default_and_nonpositive_raw_data(self):
         manifest = fixture()
@@ -140,6 +166,7 @@ class ReportTests(unittest.TestCase):
             {"step": 3, "time": 0.003, "value": -1},
         ]}
         chart = build_charts([(Path("archive"), manifest, {"status": "SUCCEEDED"})])[0]
+        self.assertEqual(chart["kind"], "residual")
         self.assertEqual(chart["yscale"], "log")
         self.assertEqual([point["x"] for point in chart["series"][0]["points"]], [1, 2, 3])
         self.assertEqual([point["raw"] for point in chart["series"][0]["points"]], [1e-4, 0, -1])
@@ -162,6 +189,9 @@ class ReportTests(unittest.TestCase):
         data = page.split('<script id="chart-data" type="application/json">')[1].split("</script>")[0]
         self.assertEqual(json.loads(data)[0]["description"], malicious)
         self.assertIn("CRASHED", page)
+        self.assertNotIn("完整数值", page)
+        self.assertNotIn("absolute_error", page)
+        self.assertNotIn("table-filter", page)
 
     def test_report_checks_selection_integrity_and_outputs_html(self):
         with tempfile.TemporaryDirectory() as temp:

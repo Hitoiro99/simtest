@@ -295,10 +295,6 @@ footer {
     color: #65788c
 }
 
-input[type=search] {
-    width: min(400px, 100%)
-}
-
 @media(max-width:700px) {
     main {
         padding: 12px
@@ -349,8 +345,7 @@ input[type=search] {
     nav,
     .toolbar,
     .legend,
-    .tooltip,
-    #table-filter {
+    .tooltip {
         display: none
     }
 

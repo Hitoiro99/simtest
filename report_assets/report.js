@@ -56,7 +56,7 @@
                 this.log = scale.value === 'log';
                 this.render();
             };
-            if (chart.kind === 'field') {
+            if (chart.kind === 'analytical') {
                 const metric = element('select', null, bar, {'aria-label': '误差统计量'});
                 statistics.forEach(([key, name]) => element('option', name, metric, {value: key}));
                 metric.onchange = () => {
@@ -117,7 +117,7 @@
         }
 
         value(point) {
-            if (this.chart.kind === 'field') {
+            if (this.chart.kind === 'analytical') {
                 const key = this.chart.error_kind + '.' + this.statistic;
                 return point.metrics ? point.metrics[key] : null;
             }
@@ -125,14 +125,11 @@
         }
 
         yLabel() {
-            if (this.chart.kind !== 'field') {
+            if (this.chart.kind !== 'analytical') {
                 return this.chart.ylabel;
             }
             const statistic = statistics.find(item => item[0] === this.statistic)[1];
-            if (this.chart.error_kind === 'normalized_error') {
-                return statistic + ' · 归一化误差 [%]';
-            }
-            return statistic + ' · 绝对误差 [' + (this.chart.unit || '无量纲') + ']';
+            return statistic + ' · 归一化误差 [%]';
         }
 
         tooltip(params) {
@@ -259,9 +256,10 @@
                 }
             });
             this.note.textContent = '可见曲线 ' + (this.chart.series.length - this.hidden.size)
-                + ' 条 · 完整记录 ' + count + ' 条 · 无效 / 不可用 ' + invalid
+                + ' 条 · 曲线采样 ' + count + ' 条 · 无效 / 不可用 ' + invalid
                 + ' 条 · 对数轴非正值 ' + nonpositive
-                + ' 条。无效及对数轴非正值保留为断点，切换线性轴可查看零值和负值；原始记录保留在数据明细中。';
+                + ' 条。无效及对数轴非正值保留为断点，切换线性轴可查看零值和负值；'
+                + '原始记录保留在作业归档中。';
         }
 
         mode(selecting) {
@@ -310,10 +308,4 @@
     if (!charts.length) {
         element('p', '所选作业没有可绘制的监控或场比较记录，请查看作业状态和诊断。', document.getElementById('chart-list'));
     }
-    document.getElementById('table-filter').addEventListener('input', event => {
-        const text = event.target.value.trim().toLowerCase();
-        document.querySelectorAll('.filterable tbody tr').forEach(row => {
-            row.hidden = !row.textContent.toLowerCase().includes(text);
-        });
-    });
 })();

@@ -241,9 +241,50 @@ def label(manifest):
     )
 
 
+def field_step(manifest, time_value):
+    """Return the verified solver step for an archived field output time."""
+    value = number(time_value)
+    if value is None:
+        return None
+
+    reader_times = manifest.get("field_reader", {}).get("times", [])
+    for entry in reader_times:
+        if number(entry.get("time")) != value:
+            continue
+        step = entry.get("provenance", {}).get("step")
+        if step is not None:
+            return step
+
+    axis = manifest.get("solver_time_axis", {})
+    if number(axis.get("start")) == value:
+        return 0
+    for step, solver_time in enumerate(axis.get("steps", []), start=1):
+        if number(solver_time) == value:
+            return step
+
+    for records in manifest.get("monitors", {}).values():
+        for record in records:
+            if number(record.get("time")) == value:
+                return record.get("step")
+    return None
+
+
+def is_residual(name, declaration):
+    mappings = declaration.get("mapping", [])
+    return (
+        name.startswith("residual_")
+        or declaration.get("type") == "residual"
+        or any(
+            isinstance(item, dict) and str(item.get("name", "")).startswith("residual:")
+            for item in mappings
+        )
+    )
+
+
 def build_charts(runs):
     charts = OrderedDict()
     runs = [(path, manifest, status) for path, manifest, status in runs if status["status"] == "SUCCEEDED"]
+    has_analytical = any(manifest.get("comparisons", {}).get("fields") for path, manifest, status in runs)
     latest = {}
     for path, m, status in runs:
         key = (m["identity"]["condition"], m["actual_solver"]["name"])
@@ -258,104 +299,91 @@ def build_charts(runs):
         for name, records in m.get("monitors", {}).items():
             declaration = m["case"]["monitors"].get(name, {})
             unit = declaration.get("unit", "1")
-            residual = name.startswith("residual_") or declaration.get("type") == "residual"
-            mappings = declaration.get("mapping", [])
-            residual = residual or any(
-                isinstance(item, dict) and str(item.get("name", "")).startswith("residual:")
-                for item in mappings
+            residual = is_residual(name, declaration)
+            if has_analytical and not residual:
+                continue
+            selected = records
+            if not selected:
+                continue
+            kind = "residual" if residual else "monitor"
+            key = (kind, name, unit)
+            chart = charts.setdefault(
+                key,
+                {
+                    "kind": kind,
+                    "title": name,
+                    "description": declaration.get("display_name", name),
+                    "unit": unit,
+                    "xlabel": "迭代步",
+                    "ylabel": name + " [" + unit + "]",
+                    "yscale": "log" if residual else "linear",
+                    "series": [],
+                },
             )
-            axes = ("step",) if residual else ("time", "step")
-            for axis in axes:
-                if residual:
-                    selected = records
+            points = []
+            for record in selected:
+                x = number(record.get("step"))
+                if record.get("quality") != "invalid":
+                    y = number(record["value"])
                 else:
-                    selected = [r for r in records if (r.get("time") is not None) == (axis == "time")]
-                if not selected:
-                    continue
-                key = ("monitor", name, unit, axis)
-                if axis == "time":
-                    xlabel = "Physical time [s]"
-                else:
-                    xlabel = "Step"
-                chart = charts.setdefault(
-                    key,
+                    y = None
+                points.append(
                     {
-                        "kind": "monitor",
-                        "title": name,
-                        "description": declaration.get("display_name", name),
-                        "unit": unit,
-                        "xlabel": xlabel,
-                        "ylabel": name + " [" + unit + "]",
-                        "yscale": "log" if residual else "linear",
-                        "series": [],
-                    },
+                        "x": x,
+                        "y": y,
+                        "raw": record["value"],
+                        "step": record.get("step"),
+                        "time": record.get("time"),
+                        "quality": record.get("quality", "valid"),
+                    }
                 )
-                points = []
-                for record in selected:
-                    x = number(record[axis])
-                    if record.get("quality") != "invalid":
-                        y = number(record["value"])
-                    else:
-                        y = None
-                    points.append(
+            chart["series"].append({"label": label(m), "job_id": m["job_id"], "points": points})
+            for comparison in m.get("comparisons", {}).get("monitors", []):
+                value = number(comparison.get("reference_value"))
+                xs = [p["x"] for p in points if p["x"] is not None]
+                if comparison["monitor"] == name and value is not None and xs:
+                    chart["series"].append(
                         {
-                            "x": x,
-                            "y": y,
-                            "raw": record["value"],
-                            "step": record["step"],
-                            "time": record.get("time"),
-                            "quality": record.get("quality", "valid"),
+                            "label": label(m) + " / reference " + comparison["reference_id"],
+                            "job_id": m["job_id"],
+                            "reference": True,
+                            "points": [{"x": x, "y": value, "raw": value} for x in (min(xs), max(xs))],
                         }
                     )
-                chart["series"].append({"label": label(m), "job_id": m["job_id"], "points": points})
-                for comparison in m.get("comparisons", {}).get("monitors", []):
-                    value = number(comparison.get("reference_value"))
-                    xs = [p["x"] for p in points if p["x"] is not None]
-                    if comparison["monitor"] == name and value is not None and xs:
-                        chart["series"].append(
-                            {
-                                "label": label(m) + " / reference " + comparison["reference_id"],
-                                "job_id": m["job_id"],
-                                "reference": True,
-                                "points": [{"x": x, "y": value, "raw": value} for x in (min(xs), max(xs))],
-                            }
-                        )
         for row in m.get("comparisons", {}).get("fields", []):
-            for error_kind in ("normalized_error", "absolute_error"):
-                key = ("field", condition, row["domain"], row["field"], row["reference_id"],
-                       row.get("unit", "1"), row["component"], error_kind)
-                if error_kind == "normalized_error":
-                    title = "归一化误差"
-                    ylabel = "Maximum normalized error [%]"
-                    factor = 100
-                else:
-                    title = "绝对误差"
-                    ylabel = "Maximum absolute error [" + key[5] + "]"
-                    factor = 1
-                chart = charts.setdefault(key, {
-                    "kind": "field",
-                    "title": " / ".join((condition_name(m), row["domain"], row["field"], row["component"], title)),
-                    "description": "按实际保存时刻比较；均值和 RMS 按单元体积加权。",
-                    "unit": key[5], "component": row["component"], "error_kind": error_kind,
-                    "xlabel": "Physical time [s]", "ylabel": ylabel, "yscale": "linear", "series": [],
-                })
-                series_label = label(m)
-                series = next((s for s in chart["series"] if s["label"] == series_label), None)
-                if series is None:
-                    series = {"label": series_label, "job_id": m["job_id"], "points": []}
-                    chart["series"].append(series)
-                metrics = {}
-                for metric in ("max", "mean", "rms"):
-                    value = None
-                    if row["status"] == "AVAILABLE":
-                        value = number((row.get(error_kind) or {}).get(metric))
-                    if value is not None:
-                        value *= factor
-                    metrics[error_kind + "." + metric] = value
-                series["points"].append({
-                    "x": number(row["time"]), "y": metrics[error_kind + ".max"],
-                    "raw": row.get("reason") or row["status"], "quality": row["status"], "metrics": metrics,
-                })
+            error_kind = "normalized_error"
+            key = (
+                "analytical", condition, row["domain"], row["field"], row["reference_id"],
+                row.get("unit", "1"), row["component"],
+            )
+            chart = charts.setdefault(key, {
+                "kind": "analytical",
+                "title": " / ".join(
+                    (condition_name(m), row["domain"], row["field"], row["component"], "解析解归一化偏差")
+                ),
+                "description": "按实际保存迭代步比较；均值和 RMS 按单元体积加权。",
+                "unit": key[5], "component": row["component"], "error_kind": error_kind,
+                "xlabel": "迭代步", "ylabel": "归一化误差 [%]", "yscale": "linear", "series": [],
+            })
+            series_label = label(m)
+            series = next((s for s in chart["series"] if s["label"] == series_label), None)
+            if series is None:
+                series = {"label": series_label, "job_id": m["job_id"], "points": []}
+                chart["series"].append(series)
+            metrics = {}
+            for metric in ("max", "mean", "rms"):
+                value = None
+                if row["status"] == "AVAILABLE":
+                    value = number((row.get(error_kind) or {}).get(metric))
+                if value is not None:
+                    value *= 100
+                metrics[error_kind + "." + metric] = value
+            step = field_step(m, row.get("time"))
+            series["points"].append({
+                "x": number(step), "y": metrics[error_kind + ".max"],
+                "raw": row.get("reason") or row["status"], "quality": row["status"], "metrics": metrics,
+                "step": step, "time": row.get("time"),
+            })
     result = list(charts.values())
     for index, chart in enumerate(result):
         chart["id"] = "chart-%02d" % (index + 1)
@@ -396,6 +424,47 @@ def monitor_rows(case_id, runs):
                         "run_status": status["status"],
                     }
                 )
+    return rows
+
+
+def final_field_rows(runs):
+    """Build report-only final-step analytical summaries without changing archives."""
+    rows = []
+    for path, manifest, status in runs:
+        grouped = {}
+        for comparison in manifest.get("comparisons", {}).get("fields", []):
+            key = (
+                comparison["domain"], comparison["field"], comparison["reference_id"], comparison["component"],
+            )
+            step = field_step(manifest, comparison.get("time"))
+            candidate = (step if step is not None else -1, number(comparison.get("time")) or 0, step, comparison)
+            if key not in grouped or candidate[:2] > grouped[key][:2]:
+                grouped[key] = candidate
+        for candidate in grouped.values():
+            step = candidate[2]
+            comparison = candidate[3]
+            metrics = comparison.get("normalized_error") or {}
+            percentages = {}
+            for metric in ("max", "mean", "rms"):
+                value = number(metrics.get(metric))
+                percentages[metric] = value * 100 if value is not None else None
+            rows.append(
+                {
+                    "job_id": manifest["job_id"],
+                    "condition": condition_name(manifest),
+                    "solver": manifest["actual_solver"]["name"],
+                    "version": manifest["actual_solver"]["version"],
+                    "domain": comparison["domain"],
+                    "field": comparison["field"],
+                    "component": comparison["component"],
+                    "step": step,
+                    "time": comparison.get("time"),
+                    "max_percent": percentages["max"],
+                    "mean_percent": percentages["mean"],
+                    "rms_percent": percentages["rms"],
+                    "status": comparison.get("status"),
+                }
+            )
     return rows
 
 
@@ -502,16 +571,37 @@ def render_html(case_id, created, runs, charts, rows, figures, destination):
         for name in sorted(inventory(path)):
             relative = os.path.relpath(str(path / name), str(destination)).replace(os.sep, "/")
             links.append({"name": name, "url": quote(relative, safe="/")})
-        # The full source manifest and status stay visible, including hardware, parameters and warnings.
-        metadata = {"manifest": manifest, "status": status}
         details.append({
             "job_id": manifest["job_id"], "condition": condition_name(manifest), "links": links,
-            "metadata": json.dumps(json_safe(metadata), ensure_ascii=False, indent=2),
+            "diagnostics": json.dumps(
+                json_safe(
+                    {
+                        "diagnostics": status.get("diagnostics", []),
+                        "log_summary": status.get("log_summary", []),
+                    }
+                ),
+                ensure_ascii=False,
+                indent=2,
+            ),
         })
-    monitors, fields = detail_records(runs)
-    field_columns = ["job_id", "domain", "field", "reference_id", "component", "time", "unit",
-                     "absolute_error", "normalized_error", "status", "reason"]
-    monitor_columns = ["job_id", "monitor", "step", "time", "value", "unit", "quality"]
+    monitor_columns = [
+        "job_id", "condition", "monitor", "solver", "version", "processes", "last_step", "last_time",
+        "last_value", "reference_id", "reference_value", "normalized_error_percent", "comparison_status", "unit",
+        "run_status",
+    ]
+    field_rows = final_field_rows(runs)
+    field_columns = [
+        "job_id", "condition", "solver", "version", "domain", "field", "component", "step", "time",
+        "max_percent", "mean_percent", "rms_percent", "status",
+    ]
+    monitor_headers = [
+        "作业 ID", "工况", "监控量", "求解器", "版本", "进程数", "最后步", "物理时间", "最后值",
+        "参考 ID", "参考值", "归一化误差 / %", "比较状态", "单位", "运行状态",
+    ]
+    field_headers = [
+        "作业 ID", "工况", "求解器", "版本", "域", "场", "分量", "最后步", "物理时间",
+        "最大误差 / %", "平均误差 / %", "RMS / %", "状态",
+    ]
     environment = Environment(autoescape=True, undefined=StrictUndefined)
     template = environment.from_string(asset_text("report.html"))
     return template.render(
@@ -519,7 +609,6 @@ def render_html(case_id, created, runs, charts, rows, figures, destination):
         css=asset_text("report.css"), js=asset_text("report.js"), echarts=asset_text("echarts.min.js"),
         payload=payload,
         jobs_table=table(["作业 ID", "工况", "求解器", "实际版本", "进程数", "状态", "墙钟 / s", "CPU / s", "峰值内存 / byte"], jobs),
-        monitors_table=table(monitor_columns, [[row.get(key) for key in monitor_columns] for row in monitors]),
-        fields_table=table(field_columns, [[row.get(key) for key in field_columns] for row in fields]),
-        summary_table=table(list(rows[0]) if rows else [], [list(row.values()) for row in rows]),
+        monitors_table=table(monitor_headers, [[row.get(key) for key in monitor_columns] for row in rows]),
+        fields_table=table(field_headers, [[row.get(key) for key in field_columns] for row in field_rows]),
     )
