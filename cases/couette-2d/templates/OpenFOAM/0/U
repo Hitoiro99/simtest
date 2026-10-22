@@ -8,9 +8,62 @@ dimensions [0 1 -1 0 0 0 0];
 internalField uniform (0 0 0);
 boundaryField
 {
-    left { type cyclic; }
-    right { type cyclic; }
-    lowerWall { type fixedValue; value uniform (0 0 0); }
-    upperWall { type fixedValue; value uniform ({{ wall_velocity | real }} 0 0); }
-    frontAndBack { type empty; }
+    inlet_lowerFluid
+    {
+        type fixedValue;
+        value nonuniform List<vector>
+        8
+        (
+            ({{ (0.03125 * wall_velocity) | real }} 0 0)
+            ({{ (0.09375 * wall_velocity) | real }} 0 0)
+            ({{ (0.15625 * wall_velocity) | real }} 0 0)
+            ({{ (0.21875 * wall_velocity) | real }} 0 0)
+            ({{ (0.28125 * wall_velocity) | real }} 0 0)
+            ({{ (0.34375 * wall_velocity) | real }} 0 0)
+            ({{ (0.40625 * wall_velocity) | real }} 0 0)
+            ({{ (0.46875 * wall_velocity) | real }} 0 0)
+        );
+    }
+    outlet_lowerFluid
+    {
+        type zeroGradient;
+    }
+    bottomWall
+    {
+        type fixedValue;
+        value uniform (0 0 0);
+    }
+    frontAndBack_lowerFluid
+    {
+        type empty;
+    }
+    inlet_upperFluid
+    {
+        type fixedValue;
+        value nonuniform List<vector>
+        8
+        (
+            ({{ (0.53125 * wall_velocity) | real }} 0 0)
+            ({{ (0.59375 * wall_velocity) | real }} 0 0)
+            ({{ (0.65625 * wall_velocity) | real }} 0 0)
+            ({{ (0.71875 * wall_velocity) | real }} 0 0)
+            ({{ (0.78125 * wall_velocity) | real }} 0 0)
+            ({{ (0.84375 * wall_velocity) | real }} 0 0)
+            ({{ (0.90625 * wall_velocity) | real }} 0 0)
+            ({{ (0.96875 * wall_velocity) | real }} 0 0)
+        );
+    }
+    outlet_upperFluid
+    {
+        type zeroGradient;
+    }
+    movingWall
+    {
+        type fixedValue;
+        value uniform ({{ wall_velocity | real }} 0 0);
+    }
+    frontAndBack_upperFluid
+    {
+        type empty;
+    }
 }

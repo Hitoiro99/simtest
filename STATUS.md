@@ -283,3 +283,10 @@
 - 目的：同一 OpenFOAM Adapter 支持 `icoFoam` 和 `simpleFoam`，由案例模板决定，不使用偏好或回退。
 - 操作：修改 `solvers/OpenFOAM/adapter.py`，新增 `supported_applications` 与 `case_application()`；`probe()` 从案例模板的 `controlDict` 读取 `application` 并选择对应可执行文件；`preprocess()` 接受两种主程序并校验与探测结果一致。修改 `solvers/base.py`，安装归属检查使用所选主程序；修改 `solvers/registry.py`，`select_install()` 接受 `case_path` 并传入 probe；修改 `jobs.py`、`simtest.py` 调用点；修改 `solvers/models.py`，`SolverInfo` 增加 `application` 字段。修改 `tests/test_core.py` 增加案例选择测试，`tests/test_jobs.py` 适配新增关键字参数。
 - 验证：WSL Ubuntu / Python 3.8.10 下完整 86 项 unittest 全部通过（新增 1 项），无失败、无跳过；未真实运行 `simpleFoam`，未重新生成报告，未运行浏览器回归，未验证 OpenMP/CUDA 或 OpenFOAM v2506。
+
+### 027｜2026-10-22｜以稳态 Couette 案例替换 couette-2d 并跑通 simpleFoam
+
+- 目的：按 `ARCHITECTURE.md` 的案例结构，把用户提供的稳态 Couette 算例落成平台案例；保留现有目录结构，由案例模板选择 `simpleFoam`。
+- 操作：修改 `cases/couette-2d/{case.yaml,README.md,conditions/Re=10.yaml,references/startup-couette-solution.md}`；用档案内容更新 `templates/OpenFOAM/{0/U,0/p,constant/physicalProperties,system/controlDict,system/fvSchemes,system/fvSolution}`，新增 `templates/OpenFOAM/constant/momentumTransport`；用档案 `blockMeshDict` 重新制备 `polyMesh/` 和 `mesh-provenance/`；`fvSolution` 增加 SIMPLE 松弛（p 0.3、U 0.7），消除无松弛导致的发散。未删除目录，未修改其他案例或代码。
+- 验证：`list cases` 发现 `couette-2d/Re=10`；`validate` 通过；串行与 2 进程 MPI 作业均 `SUCCEEDED`；最后一步体积加权平均流向速度 `0.50000000000003 m/s`（参考 0.5），速度 x 最大绝对误差由初始步 `9.69e-1` 衰减到第 200 步 `2.33e-8 m/s`；报告 `artifacts/couette-2d/reports/a07fecb015b19d80302599d0241893274b570c10fda78fbd33840b8f09bb50e5/report.html` 共 7 张图，横轴全部为 `Step`。
+- 验证：WSL Ubuntu / Python 3.8.10；未运行浏览器回归，未验证 OpenMP/CUDA 或 OpenFOAM v2506。

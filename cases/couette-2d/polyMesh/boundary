@@ -14,50 +14,59 @@ FoamFile
 }
 // * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * //
 
-5
+8
 (
-    left
+    inlet_lowerFluid
     {
-        type            cyclic;
-        inGroups        List<word> 1(cyclic);
-        nFaces          32;
-        startFace       976;
-        matchTolerance  0.0001;
-        neighbourPatch  right;
-        transformType   translational;
-        separation      (-0.9999999999999998 0 0);
+        type            patch;
+        nFaces          8;
+        startFace       3704;
     }
-    right
+    inlet_upperFluid
     {
-        type            cyclic;
-        inGroups        List<word> 1(cyclic);
-        nFaces          32;
-        startFace       1008;
-        matchTolerance  0.0001;
-        neighbourPatch  left;
-        transformType   translational;
-        separation      (0.9999999999999998 0 0);
+        type            patch;
+        nFaces          8;
+        startFace       3712;
     }
-    lowerWall
+    outlet_lowerFluid
     {
-        type            wall;
-        inGroups        List<word> 1(wall);
-        nFaces          16;
-        startFace       1040;
+        type            patch;
+        nFaces          8;
+        startFace       3720;
     }
-    upperWall
+    outlet_upperFluid
+    {
+        type            patch;
+        nFaces          8;
+        startFace       3728;
+    }
+    bottomWall
     {
         type            wall;
         inGroups        List<word> 1(wall);
-        nFaces          16;
-        startFace       1056;
+        nFaces          120;
+        startFace       3736;
     }
-    frontAndBack
+    movingWall
+    {
+        type            wall;
+        inGroups        List<word> 1(wall);
+        nFaces          120;
+        startFace       3856;
+    }
+    frontAndBack_lowerFluid
     {
         type            empty;
         inGroups        List<word> 1(empty);
-        nFaces          1024;
-        startFace       1072;
+        nFaces          1920;
+        startFace       3976;
+    }
+    frontAndBack_upperFluid
+    {
+        type            empty;
+        inGroups        List<word> 1(empty);
+        nFaces          1920;
+        startFace       5896;
     }
 )
 

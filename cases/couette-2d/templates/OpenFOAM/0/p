@@ -8,9 +8,20 @@ dimensions [0 2 -2 0 0 0 0];
 internalField uniform 0;
 boundaryField
 {
-    left { type cyclic; }
-    right { type cyclic; }
-    lowerWall { type zeroGradient; }
-    upperWall { type zeroGradient; }
-    frontAndBack { type empty; }
+    inlet_lowerFluid
+    { type zeroGradient; }
+    outlet_lowerFluid
+    { type fixedValue; value uniform 0; }
+    bottomWall
+    { type zeroGradient; }
+    frontAndBack_lowerFluid
+    { type empty; }
+    inlet_upperFluid
+    { type zeroGradient; }
+    outlet_upperFluid
+    { type fixedValue; value uniform 0; }
+    movingWall
+    { type zeroGradient; }
+    frontAndBack_upperFluid
+    { type empty; }
 }

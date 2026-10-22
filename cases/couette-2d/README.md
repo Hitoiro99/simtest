@@ -1,9 +1,13 @@
-# 二维启动 Couette 流
+# 稳态二维 Couette 流
 
-本案例验证静止流体在上平板突然以恒定速度运动后，由黏性扩散形成 Couette 速度分布的瞬态过程。板间距为 1 m，上壁速度为 1 m/s，运动黏度为 0.1 m²/s，雷诺数为 10；下壁静止，流向采用周期边界，厚度方向采用 `empty`，不施加压力梯度。
+本案例验证两块平行平板间的稳态 Couette 流动：下壁静止，上壁以恒定速度沿流向运动，流向采用入口/出口边界，厚度方向采用 `empty`，不施加压力梯度。
 
-计算区域为 1 × 1 × 0.01 m，唯一源网格 `polyMesh/` 包含 16 × 32 × 1 个六面体单元。`mesh-preparation/create_example_mesh.py` 和同目录的 `blockMeshDict` 只用于显式制备源网格；脚本拒绝覆盖已有网格，制备命令、日志和哈希写入 `mesh-provenance/`。每次作业只复制该受控源网格，不重新生成。
+- 计算区域：0.1 m × 0.01 m × 0.001 m；
+- 网格：`polyMesh/`，两块 120×8×1 六面体单元，共 1920 个单元；
+- 运动黏度：\(10^{-3}\ \mathrm{m^2/s}\)，\(Re=10\)；
+- 求解器：`simpleFoam` 稳态；案例模板 `system/controlDict` 中声明 `application simpleFoam`，平台据此选择主程序；
+- 迭代：0–200 步，每 20 步输出一次，共 11 个输出时刻；
+- 监控：体积加权平均流向速度、每步首个 Ux 与压力线性求解初始残差；
+- 场：速度与运动压力，覆盖全部输出时刻。
 
-OpenFOAM Foundation 12 模板使用 `icoFoam`。内部速度初值和下壁速度均为零，上壁从计算开始保持 `(1, 0, 0) m/s`。计算时间为 0–10 s，时间步长为 0.01 s，共 1000 步；每 100 步保存一次，因此验证场覆盖 0、1、…、10 s 共 11 个实际输出时刻。案例声明串行单进程和 MPI 两进程两个执行配置。
-
-参考解见 `references/startup-couette-solution.md`。速度参考在每个单元中心计算 `Ux`，并分别比较 `x/y/z` 分量和模长；运动压力参考为零。报告还完整保存体积加权平均 `Ux`、每个时间步首个 `Ux` 初始残差和压力初始残差。平台只量化偏差，不以预设阈值输出通过或失败结论。
+解析解为 \(u(y)=U\,y/H\)、\(v=w=0\)、\(p=0\)，详见 `references/startup-couette-solution.md`。`mesh-preparation/create_example_mesh.py` 与同目录的 `blockMeshDict` 只用于显式制备源网格；制备日志和哈希保存在 `mesh-provenance/`。

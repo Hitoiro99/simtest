@@ -9,11 +9,11 @@
       ],
       "cwd": "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh",
       "exit_code": 0,
-      "start": "2026-10-22T01:37:31.282394+00:00",
-      "end": "2026-10-22T01:37:31.523466+00:00",
-      "wall_seconds": 0.2410950999999999,
-      "cpu_seconds": 0.071186,
-      "peak_memory_bytes": 45940736,
+      "start": "2026-10-22T03:34:44.831816+00:00",
+      "end": "2026-10-22T03:34:44.970695+00:00",
+      "wall_seconds": 0.13890332599999056,
+      "cpu_seconds": 0.052638000000000004,
+      "peak_memory_bytes": 46895104,
       "memory_method": "sampled process-group RSS + wait4 ru_maxrss",
       "log": "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh/blockMesh.log"
     },
@@ -25,16 +25,16 @@
       ],
       "cwd": "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh",
       "exit_code": 0,
-      "start": "2026-10-22T01:37:31.523695+00:00",
-      "end": "2026-10-22T01:37:31.760806+00:00",
-      "wall_seconds": 0.23712769999999983,
-      "cpu_seconds": 0.05085,
-      "peak_memory_bytes": 43425792,
+      "start": "2026-10-22T03:34:44.970902+00:00",
+      "end": "2026-10-22T03:34:45.260651+00:00",
+      "wall_seconds": 0.2897723069999927,
+      "cpu_seconds": 0.064029,
+      "peak_memory_bytes": 45547520,
       "memory_method": "sampled process-group RSS + wait4 ru_maxrss",
       "log": "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh/checkMesh.log"
     }
   ],
-  "definition_sha256": "f4205b1251782c3f2d29ff9d0ae06b4054d2ee4da1a7752a715afda38e194584",
+  "definition_sha256": "950b5c012746cb2a1dce6a33bf8c5146ee77b6898f3a9041f92a9e5c42502c14",
   "geometry_m": {
     "length": 1.0,
     "gap": 1.0,
@@ -46,11 +46,12 @@
     "z": 1
   },
   "mesh_sha256": {
-    "boundary": "6005f3873f7b6b91a830322bc4330bf6f74d525ba992cadff07bcc08aab9f9eb",
-    "faces": "06199e042c3ae6ad3638c1ffbde337e46fb0e5fd20cba1fada981e84699a94e8",
-    "neighbour": "748d5140d4f84d435f5176fb308998551d83bbe2a944a60cbd59dd014667db7e",
-    "owner": "7f286a10e65938a50f7ce14cfb52ec1ce3622bf245b4a06b452cabddc42748d4",
-    "points": "26ab80e60182fed8a3bd6ba031dbf569c6436cc55700aedb9cb00618b89fca9a"
+    "boundary": "73f07d719f4151764dc6f6ef460685c46a3f374f4178cec31ab745400b25ee0b",
+    "cellZones": "c5a85e76216dcb517a979d50a25c05dfbf3622712b68df970a5b6bd5a9838e82",
+    "faces": "f691d74a93e59a458fb83b8ecbbeafcdbeabcd564740ab1d3589b024d4aae2e7",
+    "neighbour": "8783b9b93b5effb5897f89434be0a0d5eca6961203bcd9d931f46e2a497c0da5",
+    "owner": "4bef24e30b6d401deb9b36995397460ae38b9ab48ad7d8722e6fb8d23968a97e",
+    "points": "91426abd12bc3adb381ecbf5ff486354d3f89ef8dd1d1cf894640bbd90564066"
   },
   "generator": "OpenFOAM Foundation 12 blockMesh"
 }

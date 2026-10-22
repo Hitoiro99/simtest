@@ -4,4 +4,5 @@ FoamFile
     class dictionary;
     object physicalProperties;
 }
-nu [0 2 -1 0 0 0 0] {{ kinematic_viscosity | real }};
+viscosityModel  constant;
+nu              [0 2 -1 0 0 0 0] {{ kinematic_viscosity | real }};

@@ -1,14 +1,43 @@
-FoamFile { format ascii; class dictionary; object fvSolution; }
+FoamFile
+{
+    format      ascii;
+    class       dictionary;
+    location    "system";
+    object      fvSolution;
+}
+
 solvers
 {
-    p { solver PCG; preconditioner DIC; tolerance 1e-12; relTol 0; }
-    pFinal { $p; relTol 0; }
-    U { solver smoothSolver; smoother symGaussSeidel; tolerance 1e-12; relTol 0; }
+    p
+    {
+        solver          PCG;
+        preconditioner  DIC;
+        tolerance       1e-11;
+        relTol          0;
+    }
+
+    U
+    {
+        solver          PBiCGStab;
+        preconditioner  DILU;
+        tolerance       1e-11;
+        relTol          0;
+    }
 }
-PISO
+
+SIMPLE
 {
-    nCorrectors 2;
-    nNonOrthogonalCorrectors 0;
-    pRefCell 0;
-    pRefValue 0;
+    nNonOrthogonalCorrectors   0;
+}
+
+relaxationFactors
+{
+    fields
+    {
+        p               0.3;
+    }
+    equations
+    {
+        U               0.7;
+    }
 }

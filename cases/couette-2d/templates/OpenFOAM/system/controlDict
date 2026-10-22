@@ -4,20 +4,20 @@ FoamFile
     class dictionary;
     object controlDict;
 }
-application icoFoam;
-startFrom startTime;
-startTime {{ start_time | real }};
-stopAt endTime;
-endTime {{ end_time | real }};
-deltaT {{ time_step | real }};
-writeControl timeStep;
-writeInterval {{ write_interval | integer }};
-purgeWrite 0;
-writeFormat ascii;
-writePrecision 15;
+application     simpleFoam;
+startFrom       startTime;
+startTime       {{ start_iteration | integer }};
+stopAt          endTime;
+endTime         {{ end_iteration | integer }};
+deltaT          {{ iteration_step | integer }};
+writeControl    timeStep;
+writeInterval   {{ write_interval | integer }};
+purgeWrite      0;
+writeFormat     ascii;
+writePrecision  15;
 writeCompression off;
-timeFormat general;
-timePrecision 12;
+timeFormat      general;
+timePrecision   12;
 runTimeModifiable false;
 functions
 {

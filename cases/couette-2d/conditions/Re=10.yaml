@@ -8,19 +8,17 @@ references:
     domain: internalMesh
     reference_scale: {value: 1.0, unit: m/s}
     expression:
-      x: "min(1, t/first_output_time)*U*(y/H + 2/pi*(-sin(k*y)*exp(-b*t) + sin(2*k*y)*exp(-4*b*t)/2 - sin(3*k*y)*exp(-9*b*t)/3 + sin(4*k*y)*exp(-16*b*t)/4 - sin(5*k*y)*exp(-25*b*t)/5 + sin(6*k*y)*exp(-36*b*t)/6))"
+      x: "U * y / H"
       y: "0"
       z: "0"
     parameters:
       U: {value: 1.0, unit: m/s}
-      H: {value: 1.0, unit: m}
-      k: {value: 3.141592653589793, unit: 1/m}
-      b: {value: 0.9869604401089358, unit: 1/s}
-      first_output_time: {value: 1.0, unit: s}
+      H: {value: 0.01, unit: m}
     source:
       kind: formula
       file: references/startup-couette-solution.md
-      locator: "Equation 1; six-term series at saved times"
+      locator: "Equation 1; steady linear Couette profile"
+
   analytical_pressure:
     kind: analytical
     field: pressure
@@ -31,4 +29,4 @@ references:
     source:
       kind: formula
       file: references/startup-couette-solution.md
-      locator: "Equation 2; zero kinematic-pressure reference"
+      locator: "Equation 2; zero kinematic pressure"

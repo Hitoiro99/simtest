@@ -1,7 +1,7 @@
 id: couette-2d
 version: "1.0"
-title: 二维启动 Couette 流
-tags: [internal-flow, incompressible, laminar, transient, analytical]
+title: 稳态二维 Couette 流
+tags: [internal-flow, incompressible, laminar, steady, analytical]
 
 execution:
   - name: serial-1proc
@@ -15,35 +15,32 @@ execution:
 constants:
   wall_gap:
     type: real
-    value: 1.0
+    value: 0.01
     unit: m
   domain_length:
     type: real
-    value: 1.0
+    value: 0.1
     unit: m
   domain_depth:
     type: real
-    value: 0.01
+    value: 0.001
     unit: m
   kinematic_viscosity:
     type: real
-    value: 0.1
+    value: 0.001
     unit: m^2/s
-  start_time:
-    type: real
-    value: 0.0
-    unit: s
-  end_time:
-    type: real
-    value: 10.0
-    unit: s
-  time_step:
-    type: real
-    value: 0.01
-    unit: s
+  start_iteration:
+    type: integer
+    value: 0
+  end_iteration:
+    type: integer
+    value: 200
+  iteration_step:
+    type: integer
+    value: 1
   write_interval:
     type: integer
-    value: 100
+    value: 20
 
 variables:
   wall_velocity:
@@ -55,10 +52,6 @@ derived_variables:
   reynolds_number:
     type: real
     expression: "wall_velocity * wall_gap / kinematic_viscosity"
-  output_interval:
-    type: real
-    expression: "time_step * write_interval"
-    unit: s
 
 monitors:
   mean_velocity:
@@ -69,14 +62,16 @@ monitors:
       - solver: OpenFOAM
         name: volAverage(Ux)
   residual_Ux:
-    display_name: 每时间步首个流向速度线性求解初始残差
+    display_name: 每迭代步首个流向速度线性求解初始残差
     type: real
+    unit: "1"
     mapping:
       - solver: OpenFOAM
         name: residual:Ux
   residual_p:
-    display_name: 每时间步首个压力线性求解初始残差
+    display_name: 每迭代步首个压力线性求解初始残差
     type: real
+    unit: "1"
     mapping:
       - solver: OpenFOAM
         name: residual:p
