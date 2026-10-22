@@ -11,43 +11,61 @@
         <div class="eyebrow">SIMTEST / VERIFIED ARCHIVES</div>
         <h1>{{ case_id }}</h1>
         <p>仿真测试报告 · {{ created }} · {{ runs | length }} 个作业</p>
-        <nav><a href="#jobs">作业状态</a><a href="#charts">交互图表</a><a href="#results">最终结果</a><a href="#sources">追溯与下载</a></nav>
+        <div class="toolbar">
+            <button type="button" id="expand-all">全部展开</button>
+            <button type="button" id="collapse-all">全部收起</button>
+        </div>
+        <nav><a href="#jobs">作业状态</a><a href="#residual">残差</a><a href="#analytical">解析解</a><a href="#monitor">监控量</a><a href="#final">最后值</a><a href="#sources">追溯与下载</a></nav>
     </header>
     <main>
         <div class="notice">SUCCEEDED 表示执行和必需结果完整，不代表收敛或数值通过。归一化尺度不是验收容差。</div>
-        <section id="jobs">
-            <h2>作业状态与配置</h2>
-            {{ jobs_table | safe }}
+        <section id="jobs" class="panel" data-section>
+            <div class="panel-head">
+                <h2>作业状态与配置名称</h2>
+                <div class="filter-host" data-filter-for="jobs"></div>
+                <button type="button" class="section-toggle" aria-expanded="true"></button>
+            </div>
+            <div class="panel-body">{{ jobs_table | safe }}</div>
         </section>
-        <section id="charts">
-            <h2>交互图表</h2>
-            <p>图表仅分为解析解对比、监控量和残差三类，横轴统一为迭代步。存在解析场参考时显示解析解对比，不再同时显示普通监控量；残差始终独立显示。</p>
-            <p>解析解对比只显示归一化误差，每个分量单独成图，可切换最大值、体积加权平均值和体积加权 RMS。绝对误差不在页面展示。</p>
-            <p>残差纵轴默认使用 log₁₀ 对数刻度；非正数在对数轴上显示为断点，可切换为线性轴查看。缩放、平移、图例筛选和图片导出由离线 Apache ECharts 5.6.0 提供。</p>
-            <div id="chart-list"></div>
-            <noscript>{% for chart in charts %}<img class="static-chart" alt="{{ chart.title }}" src="figures/{{ chart.id }}.png">{% endfor %}</noscript>
+        <section id="residual" class="panel" data-section>
+            <div class="panel-head"><h2>残差图像</h2><button type="button" class="section-toggle" aria-expanded="true"></button></div>
+            <div class="panel-body"><div id="residual-charts" class="chart-list"></div></div>
         </section>
-        <section id="results">
-            <h2>最后一步结果</h2>
-            <p>页面只列出最后一步数值，完整过程通过上方曲线判断。最后值无效时保留原值，不回退到更早的有效值。</p>
-            <h3>监控量最终值</h3>
-            {{ monitors_table | safe }}
-            <h3>解析解最终归一化偏差</h3>
-            <p>每个方向与模长分别统计，数值单位为百分比；均值和 RMS 按单元体积加权。绝对误差不在页面展示。</p>
-            {{ fields_table | safe }}
+        <section id="analytical" class="panel" data-section>
+            <div class="panel-head"><h2>解析解归一化误差</h2><button type="button" class="section-toggle" aria-expanded="true"></button></div>
+            <div class="panel-body"><div id="analytical-charts" class="chart-list"></div></div>
         </section>
-        <section id="sources">
-            <h2>追溯与下载</h2>
-            <p>页面不展开逐点数据。原始输入、日志、标准结果、硬件、运行配置、版本与哈希仍保存在对应作业归档中。</p>
-            {% for detail in details %}
-            <details><summary>{{ detail.condition }} · {{ detail.job_id }} · 归档文件</summary>
-                <h3>诊断与日志摘要</h3>
-                <pre>{{ detail.diagnostics }}</pre>
-                <ul>{% for link in detail.links %}<li><a href="{{ link.url }}">{{ link.name }}</a></li>{% endfor %}</ul>
-            </details>
-            {% endfor %}
-            {% for chart in charts %}<p>{{ chart.title }}：{% for ext in ('png', 'svg', 'pdf') %}<a href="figures/{{ chart.id }}.{{ ext }}" download>{{ ext | upper }}</a> {% endfor %}</p>{% endfor %}
-            <p>Apache ECharts 5.6.0：<a href="ECHARTS-LICENSE.txt">LICENSE</a> · <a href="ECHARTS-NOTICE.txt">NOTICE</a> · <a href="ECHARTS-D3-LICENSE.txt">D3 LICENSE</a></p>
+        <section id="monitor" class="panel" data-section>
+            <div class="panel-head"><h2>监控量图像</h2><button type="button" class="section-toggle" aria-expanded="true"></button></div>
+            <div class="panel-body"><div id="monitor-charts" class="chart-list"></div></div>
+        </section>
+        <section id="final" class="panel" data-section>
+            <div class="panel-head"><h2>最后值</h2><button type="button" class="section-toggle" aria-expanded="true"></button></div>
+            <div class="panel-body">
+                <div class="table-block">
+                    <div class="table-head"><h3>监控量最终值</h3><div class="filter-host" data-filter-for="monitors"></div></div>
+                    {{ monitors_table | safe }}
+                </div>
+                <div class="table-block">
+                    <div class="table-head"><h3>解析解最终归一化偏差</h3><div class="filter-host" data-filter-for="fields"></div></div>
+                    {{ fields_table | safe }}
+                </div>
+            </div>
+        </section>
+        <section id="sources" class="panel" data-section>
+            <div class="panel-head"><h2>追溯与下载</h2><button type="button" class="section-toggle" aria-expanded="true"></button></div>
+            <div class="panel-body">
+                <p>页面不展开逐点数据。原始输入、日志、标准结果、硬件、运行配置、版本与哈希仍保存在对应作业归档中。</p>
+                {% for detail in details %}
+                <details><summary>{{ detail.condition }} · {{ detail.job_id }} · 归档文件</summary>
+                    <h3>诊断与日志摘要</h3>
+                    <pre>{{ detail.diagnostics }}</pre>
+                    <ul>{% for link in detail.links %}<li><a href="{{ link.url }}">{{ link.name }}</a></li>{% endfor %}</ul>
+                </details>
+                {% endfor %}
+                {% for chart in charts %}<p>{{ chart.title }}：{% for ext in ('png', 'svg', 'pdf') %}<a href="figures/{{ chart.id }}.{{ ext }}" download>{{ ext | upper }}</a> {% endfor %}</p>{% endfor %}
+                <p>Apache ECharts 5.6.0：<a href="ECHARTS-LICENSE.txt">LICENSE</a> · <a href="ECHARTS-NOTICE.txt">NOTICE</a> · <a href="ECHARTS-D3-LICENSE.txt">D3 LICENSE</a></p>
+            </div>
         </section>
     </main>
     <footer>SIMTEST · 最终结果 / 可追溯归档 / 离线报告</footer>

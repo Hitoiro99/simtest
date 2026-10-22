@@ -290,3 +290,9 @@
 - 操作：修改 `cases/couette-2d/{case.yaml,README.md,conditions/Re=10.yaml,references/startup-couette-solution.md}`；用档案内容更新 `templates/OpenFOAM/{0/U,0/p,constant/physicalProperties,system/controlDict,system/fvSchemes,system/fvSolution}`，新增 `templates/OpenFOAM/constant/momentumTransport`；用档案 `blockMeshDict` 重新制备 `polyMesh/` 和 `mesh-provenance/`；`fvSolution` 增加 SIMPLE 松弛（p 0.3、U 0.7），消除无松弛导致的发散。未删除目录，未修改其他案例或代码。
 - 验证：`list cases` 发现 `couette-2d/Re=10`；`validate` 通过；串行与 2 进程 MPI 作业均 `SUCCEEDED`；最后一步体积加权平均流向速度 `0.50000000000003 m/s`（参考 0.5），速度 x 最大绝对误差由初始步 `9.69e-1` 衰减到第 200 步 `2.33e-8 m/s`；报告 `artifacts/couette-2d/reports/a07fecb015b19d80302599d0241893274b570c10fda78fbd33840b8f09bb50e5/report.html` 共 7 张图，横轴全部为 `Step`。
 - 验证：WSL Ubuntu / Python 3.8.10；未运行浏览器回归，未验证 OpenMP/CUDA 或 OpenFOAM v2506。
+
+### 028｜2026-10-22｜重构报告分区、表格筛选排序与折叠
+
+- 目的：按用户确认的结构重排报告：去掉“交互图表”大标题，拆为残差、解析解归一化误差、监控量三个区块；作业表与最后值两表支持筛选和排序；区块支持折叠及全部展开/收起。
+- 操作：修改 `report.py`：作业表改为序号/工况/进程数/求解器（合并版本）/状态/墙钟/CPU/内存/作业 ID；最后值两表改为序号开头、作业 ID 结尾；表格输出 `data-values` 和列元数据；解析解图保持归一化误差；监控图仅保留 `kind: experimental` 的参考。修改 `report_assets/{report.html,report.js,report.css}`：新增分区、筛选面板、表格排序/序号重排、折叠工具栏。修改 `tests/test_report.py` 适配监控图来源规则。
+- 验证：WSL Ubuntu / Python 3.8.10 下 `test_report.py` 15 项全部通过；完整 86 项中 4 项 `test_couette_case` 仍按旧瞬态 Couette 期望失败，与本次报告改动无关，未修复。未运行浏览器回归，`README.md` 尚未同步新报告结构。

@@ -61,6 +61,7 @@ def report_worker(root, queue):
 class ReportTests(unittest.TestCase):
     def test_invalid_last_and_sampling_axes_are_preserved(self):
         m = fixture()
+        m["condition"] = {"references": {"exp": {"kind": "experimental", "monitor": "u"}}}
         m["monitors"]["u"].append({"step": 2, "time": None, "value": "inf"})
         runs = [(Path("archive"), m, {"status": "SUCCEEDED"})]
         charts = build_charts(runs)
@@ -77,6 +78,7 @@ class ReportTests(unittest.TestCase):
             manifest = fixture()
             manifest["job_id"] = "job-" + version
             manifest["actual_solver"] = {"name": "Fluent", "version": version}
+            manifest["condition"] = {"references": {"exp": {"kind": "experimental", "monitor": "u"}}}
             runs.append((Path("archive"), manifest, {"status": "SUCCEEDED"}))
 
         def fluent_version(name, version):
@@ -177,6 +179,7 @@ class ReportTests(unittest.TestCase):
 
     def test_html_is_offline_and_escapes_archived_text(self):
         m = fixture()
+        m["condition"] = {"references": {"exp": {"kind": "experimental", "monitor": "u"}}}
         malicious = '</script><script>alert("injected")</script>'
         m["case"]["monitors"]["u"]["display_name"] = malicious
         status = {"status": "CRASHED", "diagnostics": [malicious]}

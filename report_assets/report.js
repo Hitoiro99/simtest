@@ -26,12 +26,12 @@
     }
 
     class Chart {
-        constructor(chart) {
+        constructor(chart, container) {
             this.chart = chart;
             this.log = chart.yscale === 'log';
             this.statistic = 'max';
             this.hidden = new Set();
-            this.card = element('article', null, document.getElementById('chart-list'), {
+            this.card = element('article', null, container, {
                 class: 'chart', id: chart.id
             });
             element('h3', chart.title, this.card);
@@ -304,8 +304,135 @@
         }
     }
 
-    window.simtestCharts = charts.map(chart => new Chart(chart));
-    if (!charts.length) {
-        element('p', '所选作业没有可绘制的监控或场比较记录，请查看作业状态和诊断。', document.getElementById('chart-list'));
+    class DataTable {
+        constructor(table, host) {
+            this.table = table;
+            this.host = host;
+            this.columns = Array.from(table.tHead.rows[0].cells).map(cell => ({
+                key: cell.dataset.key, label: cell.textContent, type: cell.dataset.type
+            })).filter(column => column.key !== '_index');
+            this.body = table.tBodies[0];
+            this.rows = Array.from(this.body.rows);
+            this.build();
+        }
+        build() {
+            const box = element('div', null, this.host, {class: 'filter'});
+            const toggle = element('button', '筛选 / 排序', box, {type: 'button', class: 'filter-toggle'});
+            const panel = element('div', null, box, {class: 'filter-panel'});
+            panel.hidden = true;
+            toggle.onclick = () => { panel.hidden = !panel.hidden; };
+            const mode = element('select', null, panel);
+            element('option', '符合以下 所有', mode, {value: 'all'});
+            element('option', '符合以下 任一', mode, {value: 'any'});
+            const list = element('div', null, panel);
+            const add = element('button', '+ 添加条件', panel, {type: 'button'});
+            const sortRow = element('div', null, panel, {class: 'filter-sort'});
+            element('span', '排序', sortRow);
+            const sortField = element('select', null, sortRow);
+            element('option', '不排序', sortField, {value: ''});
+            this.columns.forEach(column => element('option', column.label, sortField, {value: column.key}));
+            const sortOrder = element('select', null, sortRow);
+            element('option', '升序', sortOrder, {value: 'asc'});
+            element('option', '降序', sortOrder, {value: 'desc'});
+            const actions = element('div', null, panel, {class: 'filter-actions'});
+            element('button', '应用', actions, {type: 'button'}).onclick = () => this.apply(mode.value, list, sortField.value, sortOrder.value);
+            element('button', '重置', actions, {type: 'button'}).onclick = () => {
+                list.replaceChildren();
+                sortField.value = '';
+                this.apply('all', list, '', 'asc');
+            };
+            add.onclick = () => this.row(list);
+            this.row(list);
+        }
+        row(list) {
+            const row = element('div', null, list, {class: 'filter-row'});
+            const field = element('select', null, row);
+            this.columns.forEach(column => element('option', column.label, field, {value: column.key}));
+            const operator = element('select', null, row);
+            const input = element('input', null, row);
+            const update = () => {
+                operator.replaceChildren();
+                const type = this.columns.find(column => column.key === field.value).type;
+                const operators = type === 'number'
+                    ? [['eq', '='], ['ne', '≠'], ['gt', '>'], ['ge', '≥'], ['lt', '<'], ['le', '≤']]
+                    : [['eq', '等于'], ['ne', '不等于'], ['contains', '包含']];
+                operators.forEach(([key, label]) => element('option', label, operator, {value: key}));
+                input.type = type === 'number' ? 'number' : 'text';
+                input.placeholder = '值';
+            };
+            field.onchange = update;
+            update();
+            element('button', '×', row, {type: 'button', class: 'filter-remove'}).onclick = () => row.remove();
+        }
+        apply(mode, list, sortKey, sortOrder) {
+            const conditions = Array.from(list.children).map(row => {
+                const selects = row.querySelectorAll('select');
+                return {key: selects[0].value, op: selects[1].value, value: row.querySelector('input').value};
+            }).filter(item => item.value !== '');
+            const test = (data, item) => {
+                const actual = data[item.key];
+                if (actual == null) return false;
+                if (item.op === 'contains') return String(actual).includes(item.value);
+                if (item.op === 'eq') return String(actual) === item.value;
+                if (item.op === 'ne') return String(actual) !== item.value;
+                const left = Number(actual);
+                const right = Number(item.value);
+                if (item.op === 'gt') return left > right;
+                if (item.op === 'ge') return left >= right;
+                if (item.op === 'lt') return left < right;
+                return left <= right;
+            };
+            const visible = this.rows.filter(row => {
+                const data = JSON.parse(row.dataset.values);
+                if (!conditions.length) return true;
+                const results = conditions.map(item => test(data, item));
+                return mode === 'any' ? results.some(Boolean) : results.every(Boolean);
+            });
+            if (sortKey) {
+                const column = this.columns.find(item => item.key === sortKey);
+                visible.sort((a, b) => {
+                    const left = JSON.parse(a.dataset.values)[sortKey];
+                    const right = JSON.parse(b.dataset.values)[sortKey];
+                    const order = column.type === 'number'
+                        ? Number(left) - Number(right)
+                        : String(left).localeCompare(String(right));
+                    return sortOrder === 'desc' ? -order : order;
+                });
+            }
+            this.body.replaceChildren(...visible);
+            visible.forEach((row, index) => { row.cells[0].textContent = String(index + 1); });
+        }
     }
+
+    document.querySelectorAll('[data-table-id]').forEach(table => {
+        const host = document.querySelector('[data-filter-for="' + table.dataset.tableId + '"]');
+        if (host) {
+            new DataTable(table, host);
+        }
+    });
+
+    const sections = Array.from(document.querySelectorAll('[data-section]'));
+    sections.forEach(section => {
+        const toggle = section.querySelector('.section-toggle');
+        const set = collapsed => {
+            section.classList.toggle('collapsed', collapsed);
+            toggle.setAttribute('aria-expanded', String(!collapsed));
+        };
+        toggle.onclick = () => set(!section.classList.contains('collapsed'));
+    });
+    document.getElementById('expand-all').onclick = () => sections.forEach(section => section.classList.remove('collapsed'));
+    document.getElementById('collapse-all').onclick = () => sections.forEach(section => section.classList.add('collapsed'));
+
+    const groups = {residual: 'residual-charts', analytical: 'analytical-charts', monitor: 'monitor-charts'};
+    const flat = [];
+    Object.keys(groups).forEach(kind => {
+        const container = document.getElementById(groups[kind]);
+        charts.filter(chart => chart.kind === kind).forEach(chart => {
+            flat.push(new Chart(chart, container));
+        });
+        if (!container.children.length) {
+            container.closest('section').classList.add('empty');
+        }
+    });
+    window.simtestCharts = flat;
 })();

@@ -284,7 +284,6 @@ def is_residual(name, declaration):
 def build_charts(runs):
     charts = OrderedDict()
     runs = [(path, manifest, status) for path, manifest, status in runs if status["status"] == "SUCCEEDED"]
-    has_analytical = any(manifest.get("comparisons", {}).get("fields") for path, manifest, status in runs)
     latest = {}
     for path, m, status in runs:
         key = (m["identity"]["condition"], m["actual_solver"]["name"])
@@ -300,8 +299,13 @@ def build_charts(runs):
             declaration = m["case"]["monitors"].get(name, {})
             unit = declaration.get("unit", "1")
             residual = is_residual(name, declaration)
-            if has_analytical and not residual:
-                continue
+            if not residual:
+                experimental = any(
+                    reference.get("kind") == "experimental" and reference.get("monitor") == name
+                    for reference in m.get("condition", {}).get("references", {}).values()
+                )
+                if not experimental:
+                    continue
             selected = records
             if not selected:
                 continue
@@ -544,14 +548,101 @@ def escaped(value):
     return html.escape(str(value), quote=True)
 
 
-def table(headers, rows):
+def table(columns, rows, table_id):
+    head = "".join(
+        '<th data-key="%s" data-type="%s">%s</th>' % (column["key"], column["type"], escaped(column["label"]))
+        for column in columns
+    )
+    body = []
+    for row in rows:
+        values = json.dumps(
+            json_safe({column["key"]: row.get(column["key"]) for column in columns if column["key"] != "_index"}),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        cells = []
+        for column in columns:
+            value = row.get(column["key"])
+            if column["key"] == "_index":
+                cells.append('<td class="cell-index"></td>')
+            elif column["type"] == "status":
+                cells.append(
+                    '<td class="cell-status"><span class="status status-%s">%s</span></td>'
+                    % (escaped(value), escaped(value))
+                )
+            else:
+                cells.append('<td class="cell-%s">%s</td>' % (column["type"], escaped(value)))
+        body.append('<tr data-values="%s">%s</tr>' % (html.escape(values, quote=True), "".join(cells)))
     return (
-        '<div class="table-wrap"><table><thead><tr>'
-        + "".join("<th>" + escaped(h) + "</th>" for h in headers)
+        ('<div class="table-wrap" data-table-id="%s"><table class="data-table"><thead><tr>' % table_id)
+        + head
         + "</tr></thead><tbody>"
-        + "".join("<tr>" + "".join("<td>" + escaped(v) + "</td>" for v in row) + "</tr>" for row in rows)
+        + "".join(body)
         + "</tbody></table></div>"
     )
+
+
+JOB_COLUMNS = [
+    {"key": "_index", "label": "序号", "type": "index"},
+    {"key": "condition", "label": "工况", "type": "text"},
+    {"key": "processes", "label": "进程数", "type": "number"},
+    {"key": "solver", "label": "求解器", "type": "text"},
+    {"key": "status", "label": "状态", "type": "status"},
+    {"key": "wall_seconds", "label": "墙钟 / s", "type": "number"},
+    {"key": "cpu_seconds", "label": "CPU / s", "type": "number"},
+    {"key": "peak_memory_bytes", "label": "峰值内存 / byte", "type": "number"},
+    {"key": "job_id", "label": "作业 ID", "type": "text"},
+]
+
+MONITOR_COLUMNS = [
+    {"key": "_index", "label": "序号", "type": "index"},
+    {"key": "condition", "label": "工况", "type": "text"},
+    {"key": "processes", "label": "进程数", "type": "number"},
+    {"key": "solver", "label": "求解器", "type": "text"},
+    {"key": "monitor", "label": "监控量", "type": "text"},
+    {"key": "last_step", "label": "最后步", "type": "number"},
+    {"key": "last_value", "label": "最后值", "type": "text"},
+    {"key": "reference_value", "label": "参考值", "type": "text"},
+    {"key": "normalized_error_percent", "label": "归一化误差 / %", "type": "number"},
+    {"key": "comparison_status", "label": "比较状态", "type": "status"},
+    {"key": "job_id", "label": "作业 ID", "type": "text"},
+]
+
+FIELD_COLUMNS = [
+    {"key": "_index", "label": "序号", "type": "index"},
+    {"key": "condition", "label": "工况", "type": "text"},
+    {"key": "processes", "label": "进程数", "type": "number"},
+    {"key": "solver", "label": "求解器", "type": "text"},
+    {"key": "field", "label": "场", "type": "text"},
+    {"key": "component", "label": "分量", "type": "text"},
+    {"key": "step", "label": "最后步", "type": "number"},
+    {"key": "max_percent", "label": "最大 / %", "type": "number"},
+    {"key": "mean_percent", "label": "平均 / %", "type": "number"},
+    {"key": "rms_percent", "label": "RMS / %", "type": "number"},
+    {"key": "status", "label": "状态", "type": "status"},
+    {"key": "job_id", "label": "作业 ID", "type": "text"},
+]
+
+
+def job_rows(runs):
+    result = []
+    for path, manifest, status in runs:
+        measured = manifest.get("execution_result", {})
+        solver = manifest["actual_solver"]
+        result.append(
+            {
+                "_index": "",
+                "condition": condition_name(manifest),
+                "processes": manifest["execution"]["processes"],
+                "solver": "%s-%s" % (solver["name"], solver["version"]),
+                "status": status["status"],
+                "wall_seconds": measured.get("wall_seconds"),
+                "cpu_seconds": measured.get("cpu_seconds"),
+                "peak_memory_bytes": measured.get("peak_memory_bytes"),
+                "job_id": manifest["job_id"],
+            }
+        )
+    return result
 
 
 def render_html(case_id, created, runs, charts, rows, figures, destination):
@@ -559,56 +650,85 @@ def render_html(case_id, created, runs, charts, rows, figures, destination):
     payload = json.dumps(json_safe(charts), ensure_ascii=False, allow_nan=False)
     payload = payload.replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026")
     payload = payload.replace("\u2028", "\\u2028").replace("\u2029", "\\u2029")
-    jobs, details = [], []
+    details = []
     for path, manifest, status in runs:
-        measured = manifest.get("execution_result", {})
-        jobs.append([
-            manifest["job_id"], condition_name(manifest), manifest["actual_solver"]["name"],
-            manifest["actual_solver"]["version"], manifest["execution"]["processes"], status["status"],
-            measured.get("wall_seconds"), measured.get("cpu_seconds"), measured.get("peak_memory_bytes"),
-        ])
         links = []
         for name in sorted(inventory(path)):
             relative = os.path.relpath(str(path / name), str(destination)).replace(os.sep, "/")
             links.append({"name": name, "url": quote(relative, safe="/")})
-        details.append({
-            "job_id": manifest["job_id"], "condition": condition_name(manifest), "links": links,
-            "diagnostics": json.dumps(
-                json_safe(
-                    {
-                        "diagnostics": status.get("diagnostics", []),
-                        "log_summary": status.get("log_summary", []),
-                    }
+        details.append(
+            {
+                "job_id": manifest["job_id"],
+                "condition": condition_name(manifest),
+                "links": links,
+                "diagnostics": json.dumps(
+                    json_safe(
+                        {
+                            "diagnostics": status.get("diagnostics", []),
+                            "log_summary": status.get("log_summary", []),
+                        }
+                    ),
+                    ensure_ascii=False,
+                    indent=2,
                 ),
-                ensure_ascii=False,
-                indent=2,
-            ),
-        })
-    monitor_columns = [
-        "job_id", "condition", "monitor", "solver", "version", "processes", "last_step", "last_time",
-        "last_value", "reference_id", "reference_value", "normalized_error_percent", "comparison_status", "unit",
-        "run_status",
-    ]
-    field_rows = final_field_rows(runs)
-    field_columns = [
-        "job_id", "condition", "solver", "version", "domain", "field", "component", "step", "time",
-        "max_percent", "mean_percent", "rms_percent", "status",
-    ]
-    monitor_headers = [
-        "作业 ID", "工况", "监控量", "求解器", "版本", "进程数", "最后步", "物理时间", "最后值",
-        "参考 ID", "参考值", "归一化误差 / %", "比较状态", "单位", "运行状态",
-    ]
-    field_headers = [
-        "作业 ID", "工况", "求解器", "版本", "域", "场", "分量", "最后步", "物理时间",
-        "最大误差 / %", "平均误差 / %", "RMS / %", "状态",
-    ]
+            }
+        )
+    info = {
+        manifest["job_id"]: (
+            manifest["execution"]["processes"],
+            "%s-%s" % (manifest["actual_solver"]["name"], manifest["actual_solver"]["version"]),
+        )
+        for path, manifest, status in runs
+    }
+    monitor_rows_data = []
+    for row in rows:
+        monitor_rows_data.append(
+            {
+                "_index": "",
+                "condition": row.get("condition"),
+                "processes": row.get("processes"),
+                "solver": "%s-%s" % (row.get("solver"), row.get("version")),
+                "monitor": row.get("monitor"),
+                "last_step": row.get("last_step"),
+                "last_value": row.get("last_value"),
+                "reference_value": row.get("reference_value"),
+                "normalized_error_percent": row.get("normalized_error_percent"),
+                "comparison_status": row.get("comparison_status"),
+                "job_id": row.get("job_id"),
+            }
+        )
+    field_rows_data = []
+    for row in final_field_rows(runs):
+        processes, solver = info[row["job_id"]]
+        field_rows_data.append(
+            {
+                "_index": "",
+                "condition": row["condition"],
+                "processes": processes,
+                "solver": solver,
+                "field": row["field"],
+                "component": row["component"],
+                "step": row["step"],
+                "max_percent": row["max_percent"],
+                "mean_percent": row["mean_percent"],
+                "rms_percent": row["rms_percent"],
+                "status": row["status"],
+                "job_id": row["job_id"],
+            }
+        )
     environment = Environment(autoescape=True, undefined=StrictUndefined)
     template = environment.from_string(asset_text("report.html"))
     return template.render(
-        case_id=case_id, created=created, runs=runs, charts=charts, details=details,
-        css=asset_text("report.css"), js=asset_text("report.js"), echarts=asset_text("echarts.min.js"),
+        case_id=case_id,
+        created=created,
+        runs=runs,
+        charts=charts,
+        details=details,
+        css=asset_text("report.css"),
+        js=asset_text("report.js"),
+        echarts=asset_text("echarts.min.js"),
         payload=payload,
-        jobs_table=table(["作业 ID", "工况", "求解器", "实际版本", "进程数", "状态", "墙钟 / s", "CPU / s", "峰值内存 / byte"], jobs),
-        monitors_table=table(monitor_headers, [[row.get(key) for key in monitor_columns] for row in rows]),
-        fields_table=table(field_headers, [[row.get(key) for key in field_columns] for row in field_rows]),
+        jobs_table=table(JOB_COLUMNS, job_rows(runs), "jobs"),
+        monitors_table=table(MONITOR_COLUMNS, monitor_rows_data, "monitors"),
+        fields_table=table(FIELD_COLUMNS, field_rows_data, "fields"),
     )
