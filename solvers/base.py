@@ -206,7 +206,8 @@ class SolverAdapter(ABC):
 
     def check_installation(self, info, path):
         """校验探测到的主程序属于安装根目录；缺少主程序或路径不符时抛出 VersionMismatchError。"""
-        executable = info.executables.get(self.main_executable)
+        name = getattr(info, "application", "") or self.main_executable
+        executable = info.executables.get(name)
         if not executable:
             raise VersionMismatchError("Adapter 未提供主程序标识或探测结果缺少主程序")
         if Path(path).resolve() not in Path(executable).resolve().parents:

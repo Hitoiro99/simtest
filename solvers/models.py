@@ -48,6 +48,7 @@ class SolverInfo:
     branch: str
     capabilities: List[str]
     executables: Dict[str, str]
+    application: str = ""
 
 
 @dataclass

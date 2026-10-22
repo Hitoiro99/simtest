@@ -104,7 +104,7 @@ class JobTests(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def install(self, *args):
+    def install(self, *args, **kwargs):
         return copy.deepcopy(self.installation), dict(self.environment), copy.deepcopy(self.info), self.adapter
 
     def write_condition(self, end_time=1, delta_t=0.1, output_interval=1):

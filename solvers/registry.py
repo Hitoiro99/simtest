@@ -216,7 +216,7 @@ def register_install(root, args):
     return {"config": str(file), "solver": info.__dict__}
 
 
-def select_install(root, selector, config_file=None):
+def select_install(root, selector, config_file=None, case_path=None):
     """按名称和版本选择安装，返回安装、环境、实际版本及 Adapter；缺失、不兼容或歧义时抛出异常。"""
     discover()
 
@@ -242,7 +242,7 @@ def select_install(root, selector, config_file=None):
     public = min(ADAPTERS[name].values(), key=lambda cls: cls.version_key(cls.version))()
     for installation in installations:
         env = load_env(installation)
-        info = public.probe(SimpleNamespace(environment=env))
+        info = public.probe(SimpleNamespace(environment=env, case_path=case_path))
         if info.version != str(installation["version"]):
             raise VersionMismatchError("部署版本与探测版本不一致")
         public.check_installation(info, installation["path"])

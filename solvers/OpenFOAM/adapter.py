@@ -35,6 +35,7 @@ class OpenFOAMAdapter(SolverAdapter):
     name = "OpenFOAM"
     version = "12"
     main_executable = "icoFoam"
+    supported_applications = ("icoFoam", "simpleFoam")
     version_rule = "Foundation integer release; same branch only"
     environment_keys = ("WM_PROJECT_VERSION", "WM_PROJECT_DIR", "WM_OPTIONS", "OMP_NUM_THREADS")
     capabilities = frozenset({"transient", "steady", "incompressible", "laminar", "mpi", "serial"})
@@ -45,22 +46,42 @@ class OpenFOAMAdapter(SolverAdapter):
             raise UnsupportedCaseError("首期 Foundation 版本序列只接受整数版本；不能与 OpenCFD vYYMM 混排")
         return int(version)
 
+    def case_application(self, context):
+        """按案例模板 controlDict 的 application 选择求解器主程序。"""
+        case_path = getattr(context, "case_path", None)
+        if case_path is None:
+            return self.main_executable
+        from case_management.templates import choose
+
+        chain = choose(Path(case_path), self)
+        for entry in reversed(chain):
+            file = Path(entry["_path"]) / "system" / "controlDict"
+            if not file.is_file():
+                continue
+            text = file.read_text(encoding="utf-8", errors="replace")
+            match = re.search(r"(?m)^\s*application\s+([A-Za-z][A-Za-z0-9_]*)\s*;", text)
+            if not match:
+                raise ConfigurationError("模板 controlDict 缺少可解析的 application")
+            return match.group(1)
+        raise ConfigurationError("模板缺少 system/controlDict")
+
     def probe(self, context):
         env = context.environment
-        tools = {
-            name: find_tool(name, env)
-            for name in (
-                "icoFoam",
-                "foamDictionary",
-                "checkMesh",
-                "decomposePar",
-                "reconstructPar",
-                "foamToVTK",
-                "foamPostProcess",
-                "pvpython",
-            )
-        }
-        help_text = run_capture([tools["icoFoam"], "-help"], env)
+        application = self.case_application(context)
+        if application not in self.supported_applications:
+            raise UnsupportedCaseError("不支持的求解器主程序: " + application)
+        tools = {application: find_tool(application, env)}
+        for name in (
+            "foamDictionary",
+            "checkMesh",
+            "decomposePar",
+            "reconstructPar",
+            "foamToVTK",
+            "foamPostProcess",
+            "pvpython",
+        ):
+            tools[name] = find_tool(name, env)
+        help_text = run_capture([tools[application], "-help"], env)
         match = re.search(r"^Using:\s*OpenFOAM-([0-9]+)\s*\(see https?://openfoam.org\)", help_text, re.M)
         if not match:
             raise UnsupportedCaseError("无法从求解器可执行文件确认 Foundation 版本")
@@ -75,7 +96,9 @@ class OpenFOAMAdapter(SolverAdapter):
             capabilities = sorted(self.capabilities)
         else:
             capabilities = sorted(self.capabilities - {"mpi"})
-        return SolverInfo(self.name, version, build.group(1), "Foundation", capabilities, tools)
+        return SolverInfo(
+            self.name, version, build.group(1), "Foundation", capabilities, tools, application=application
+        )
 
     def validate(self, context):
         from solvers.registry import mapped
@@ -198,8 +221,11 @@ class OpenFOAMAdapter(SolverAdapter):
         )
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]*", application):
             raise PreprocessError("非法 application")
-        if application != self.main_executable:
-            raise UnsupportedCaseError("当前 Adapter 仅登记并指纹校验主程序 " + self.main_executable)
+        if application not in self.supported_applications:
+            raise UnsupportedCaseError("不支持的求解器主程序: " + application)
+        expected = getattr(context.info, "application", "")
+        if expected and application != expected:
+            raise UnsupportedCaseError("controlDict 的 application 与探测结果不一致: " + application)
         context.manifest["application"] = application
         context.info.executables[application] = find_tool(application, context.environment)
         source_snapshot = context.input / "_source"

@@ -122,7 +122,7 @@ def main(argv=None):
             if not conditions:
                 raise SolverError("没有工况")
 
-            _, _, info, adapter = select_install(root, args.solver, args.config)
+            _, _, info, adapter = select_install(root, args.solver, args.config, case_path=path)
             chain = choose(path, adapter)
             template_files(chain, adapter)
             profiles = execution_configs(case.get("execution", {}))

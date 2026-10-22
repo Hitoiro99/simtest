@@ -277,3 +277,9 @@
 - 目的：按用户要求把图表横轴标签由“迭代步”改为英文 `Step`，语义不变。
 - 操作：修改 `report.py` 两处 `xlabel` 为 `Step`；修改 `tests/test_report.py` 和 `tests/report/check_html_report.cjs` 的断言；修改 `README.md` 两处横轴说明。新增、删除、移动/重命名受维护源文件：无。
 - 验证：WSL Ubuntu / Python 3.8.10 下报告测试 15 项及完整 85 项 unittest 全部通过，无失败、无跳过；未重新生成报告，未运行浏览器回归，未验证 OpenMP/CUDA 或 OpenFOAM v2506。
+
+### 026｜2026-10-22｜按案例选择 icoFoam 或 simpleFoam
+
+- 目的：同一 OpenFOAM Adapter 支持 `icoFoam` 和 `simpleFoam`，由案例模板决定，不使用偏好或回退。
+- 操作：修改 `solvers/OpenFOAM/adapter.py`，新增 `supported_applications` 与 `case_application()`；`probe()` 从案例模板的 `controlDict` 读取 `application` 并选择对应可执行文件；`preprocess()` 接受两种主程序并校验与探测结果一致。修改 `solvers/base.py`，安装归属检查使用所选主程序；修改 `solvers/registry.py`，`select_install()` 接受 `case_path` 并传入 probe；修改 `jobs.py`、`simtest.py` 调用点；修改 `solvers/models.py`，`SolverInfo` 增加 `application` 字段。修改 `tests/test_core.py` 增加案例选择测试，`tests/test_jobs.py` 适配新增关键字参数。
+- 验证：WSL Ubuntu / Python 3.8.10 下完整 86 项 unittest 全部通过（新增 1 项），无失败、无跳过；未真实运行 `simpleFoam`，未重新生成报告，未运行浏览器回归，未验证 OpenMP/CUDA 或 OpenFOAM v2506。
