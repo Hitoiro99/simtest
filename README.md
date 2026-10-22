@@ -2,7 +2,7 @@
 
 把案例输入交给已登记的求解器，自动完成准备、计算、结果标准化、解析解比较和 **HTML 交互报告**。
 
-当前已验证：**WSL Ubuntu + OpenFOAM Foundation 12 + shear-decay-2d/Re=10**，支持串行及两个 MPI 进程。系统不设置数值通过阈值；`SUCCEEDED` 表示执行和必需结果完整。
+当前已验证：**WSL Ubuntu + OpenFOAM Foundation 12 + couette-2d/Re=10**，支持串行及两个 MPI 进程。系统不设置数值通过阈值；`SUCCEEDED` 表示执行和必需结果完整，数值偏差需要结合解析解比较结果判断。
 
 ## 从这里开始
 
@@ -11,9 +11,7 @@
 - [目录与运行流程](#目录与运行流程)：各部分职责。
 - [首次配置与排错](#首次配置与排错)：其他机器部署、Linux 和 WSL 常见提示。
 
-报告由实际运行自动生成，路径会显示在命令输出中；也可使用 `report` 汇总已保存作业。
-
-[本次串行与 MPI 汇总报告](artifacts/shear-decay-2d/reports/4c5099481d397bc2c72b5f1a526297c95df3f674c0fee5ad1730822fce759e1b/report.html) 包含本次修改完成后保留的两份验证归档。
+报告由实际运行自动生成，路径会显示在命令输出中；也可使用 `report` 汇总已保存作业。新案例完成计算前不提供固定报告链接。
 
 ## 日常使用
 
@@ -36,12 +34,12 @@ cd /mnt/c/Users/Administrator/PycharmProjects/repository
 ~~~bash
 python3 -m simtest list cases
 python3 -m simtest list solvers
-python3 -m simtest validate shear-decay-2d
+python3 -m simtest validate couette-2d
 ~~~
 
 | 命令 | 结果含义 |
 |---|---|
-| `list cases` | 扫描 `cases/` 下符合结构的案例和工况。当前只有 `shear-decay-2d/Re=10`，因此只显示一项是正常的。 |
+| `list cases` | 扫描 `cases/` 下符合结构的案例和工况。当前示例为 `couette-2d/Re=10`，因此只显示一项是正常的。 |
 | `list solvers` | 列出代码中登记的 Adapter 版本，当前为 OpenFOAM 12；不是扫描机器上所有安装。 |
 | `validate` | 检查案例、工况、模板与实际安装版本；返回 `valid: true` 后可运行。 |
 
@@ -49,7 +47,7 @@ python3 -m simtest validate shear-decay-2d
 
 ~~~bash
 # 依次运行 case.yaml 中声明的全部执行配置；完成后合并成一份 HTML 报告
-python3 -m simtest run shear-decay-2d
+python3 -m simtest run couette-2d
 ~~~
 
 执行参数在 `cases/<案例>/case.yaml` 的 `execution` 中声明，可以是单个映射，也可以是映射列表：
@@ -75,7 +73,7 @@ execution:
 只准备输入、暂不计算：
 
 ~~~bash
-python3 -m simtest run shear-decay-2d --prepare-only
+python3 -m simtest run couette-2d --prepare-only
 ~~~
 
 此时输出 `QUEUED` 表示准备完成，**没有后台队列继续运行**，也没有已归档结果可生成报告。要实际计算，重新执行相同参数、不带 `--prepare-only` 的 `run`，校验输入和工作区快照后接续同一作业；若该身份已成功归档，则直接复用。
@@ -83,7 +81,7 @@ python3 -m simtest run shear-decay-2d --prepare-only
 需要调整超时：
 
 ~~~bash
-python3 -m simtest run shear-decay-2d --timeout 300 --heartbeat-timeout 120
+python3 -m simtest run couette-2d --timeout 300 --heartbeat-timeout 120
 ~~~
 
 单位为秒；心跳超时指原生日志长时间没有进度输出。Ctrl+C 会终止受监督的求解器进程组。
@@ -92,12 +90,12 @@ python3 -m simtest run shear-decay-2d --timeout 300 --heartbeat-timeout 120
 
 ~~~bash
 # 查看已归档作业的真实 ID、工况、进程数、状态和时间
-python3 -m simtest list runs --case shear-decay-2d
+python3 -m simtest list runs --case couette-2d
 
 # 选择具体作业时，在命令后追加 --job-id 和上面查到的真实 ID
 
 # 汇总本案例的成功归档和 runs 中保留的终态失败作业
-python3 -m simtest report shear-decay-2d
+python3 -m simtest report couette-2d
 ~~~
 
 `report` 从归档 CSV/VTU 独立读取观测数据，使用归档中的参考定义计算报告，不启动求解器，也不修改归档。同一选集与相同报告代码复用同一报告目录；重复 ID 自动去重。可重复指定 `--job-id` 选取不同作业。选择同一目的、可比较的运行集合，避免混合不同开发阶段的结果。
@@ -112,7 +110,7 @@ python3 -m simtest report shear-decay-2d
 python3 - <<'PY'
 from pathlib import Path
 
-reports = list(Path("artifacts/shear-decay-2d/reports").glob("*/report.html"))
+reports = list(Path("artifacts/couette-2d/reports").glob("*/report.html"))
 if reports:
     print(max(reports, key=lambda path: path.stat().st_mtime).resolve())
 else:
@@ -120,7 +118,7 @@ else:
 PY
 ~~~
 
-使用浏览器打开输出的 HTML 文件。原生 Linux 图形环境可使用文件管理器打开；WSL 中的 `/mnt/c/...` 对应 Windows 的 `C:\...`，可在 Windows 文件资源管理器中双击 `report.html`。也可在 WSL 执行 `explorer.exe .` 打开当前工程目录，再进入 `artifacts/shear-decay-2d/reports/`。
+使用浏览器打开输出的 HTML 文件。原生 Linux 图形环境可使用文件管理器打开；WSL 中的 `/mnt/c/...` 对应 Windows 的 `C:\...`，可在 Windows 文件资源管理器中双击 `report.html`。也可在 WSL 执行 `explorer.exe .` 打开当前工程目录，再进入 `artifacts/couette-2d/reports/`。
 
 ## 报告怎么看
 
@@ -216,26 +214,38 @@ integrity.json  报告产物完整性清单
 
 标准监控表采用 `step,time,各监控量` 的宽表。不同监控的采样位置留空。报告读取归档 CSV/VTU 并使用归档参考定义计算偏差；之后修改源案例公式不会改写旧归档或改变旧身份的参考定义。
 
-## 首个案例：shear-decay-2d
+## 首个案例：couette-2d
 
-静止壁面之间的层流速度扩散，解析式为：
+`couette-2d/Re=10` 是二维启动 Couette 流。两块平行板间充满不可压缩层流流体：下壁静止，上壁从 `t=0` 起以恒定速度 `U` 沿 X 方向运动，X 方向采用周期边界，Z 方向为 `empty`。内部速度初始为零，随后由黏性作用从上壁向流体内部扩散，并逐渐接近线性稳态速度分布。
+
+速度解析解为：
 
 ~~~text
-Ux = A × sin(πy/H) × exp[-ν(π/H)²t]
+Ux(y,t) / U = y/H
+              + (2/π) Σ[n=1..∞] {(-1)^n / n
+                  × sin(nπy/H)
+                  × exp[-n²π²νt/H²]}
 Uy = Uz = 0
 ~~~
 
+其中 `H` 为板间距，`ν` 为运动黏度。数值参考在正时间使用有限项级数计算，并记录截断方式；`t=0` 的初始条件和壁面不连续点单独处理，不能用有限项级数的振荡判断求解错误。
+
 | 参数 | 当前设置 |
 |---|---|
-| 运动黏度 ν | 0.001 m²/s，案例常量 |
-| 幅值 A | 0.1 m/s，Re=10 工况变量 |
-| 高度 H | 0.1 m，固定网格高度与参考参数 |
-| 网格 | 128 单元、330 节点 |
-| 时间 | 步长 0.001 s，终止 1 s，每 0.1 s 保存场 |
+| 工况 | `Re=10`，其中 `Re=UH/ν` |
+| 上壁速度 U | 1 m/s |
+| 运动黏度 ν | 0.1 m²/s |
+| 板间距 H | 1 m |
+| 初始内部速度 | `(0, 0, 0)` m/s |
+| 边界 | 上壁移动、下壁静止、X 周期、Z 为 `empty` |
+| 网格 | `16 × 32 × 1`，共 512 个单元 |
+| 时间 | 步长 0.01 s，终止 10 s，共 1000 步；每 1 s 保存一次场 |
 
-一个常量、一个变量、一个工况是示例选择；平台的字典和发现机制不限制数量。更换 A、物性或网格时，需要同步维护工况参考参数、参考来源和案例版本，避免比较不同物理条件。
+案例输出保留实际保存时刻的速度场及 `Ux`、`Uy`、`Uz`、速度模长，记录速度与压力残差、体积平均速度和求解资源。报告按时刻比较数值场与解析解，分别给出各速度分量和模长的最大误差、体积加权平均误差及 RMS；压力用于求解监控，不作为 Couette 速度解析解的一部分。
 
-唯一源网格为 `cases/shear-decay-2d/polyMesh/`。运行过程只复制并核验，不隐式重新生成源网格。`cases/shear-decay-2d/mesh-preparation/create_example_mesh.py` 与同目录 `blockMeshDict` 用于显式制备新网格，脚本拒绝覆盖已有源网格。
+一个工况和两种执行配置是当前示例选择；平台的发现机制不限制案例、工况或执行配置数量。更换 `U`、`ν`、`H`、时间设置或网格时，需要同步维护工况参考参数、参考来源和案例版本，避免比较不同物理条件。
+
+唯一源网格为 `cases/couette-2d/polyMesh/`。运行过程只复制并核验，不隐式重新生成源网格。`cases/couette-2d/mesh-preparation/create_example_mesh.py` 与同目录 `blockMeshDict` 用于显式制备新网格，脚本拒绝覆盖已有源网格。
 
 ## 首次配置与排错
 

@@ -1,7 +1,7 @@
-id: shear-decay-2d
+id: couette-2d
 version: "1.0"
-title: 二维层流速度扩散
-tags: [incompressible, laminar, transient, analytical]
+title: 二维启动 Couette 流
+tags: [internal-flow, incompressible, laminar, transient, analytical]
 
 execution:
   - name: serial-1proc
@@ -13,18 +13,52 @@ execution:
     processes: 2
 
 constants:
+  wall_gap:
+    type: real
+    value: 1.0
+    unit: m
+  domain_length:
+    type: real
+    value: 1.0
+    unit: m
+  domain_depth:
+    type: real
+    value: 0.01
+    unit: m
   kinematic_viscosity:
     type: real
-    value: 0.001
+    value: 0.1
     unit: m^2/s
+  start_time:
+    type: real
+    value: 0.0
+    unit: s
+  end_time:
+    type: real
+    value: 10.0
+    unit: s
+  time_step:
+    type: real
+    value: 0.01
+    unit: s
+  write_interval:
+    type: integer
+    value: 100
 
 variables:
-  initial_velocity:
+  wall_velocity:
     type: real
     required: true
     unit: m/s
 
-derived_variables: {}
+derived_variables:
+  reynolds_number:
+    type: real
+    expression: "wall_velocity * wall_gap / kinematic_viscosity"
+  output_interval:
+    type: real
+    expression: "time_step * write_interval"
+    unit: s
 
 monitors:
   mean_velocity:
@@ -55,3 +89,10 @@ fields:
     mapping:
       - solver: OpenFOAM
         name: U
+  pressure:
+    display_name: 运动压力
+    type: real
+    unit: m^2/s^2
+    mapping:
+      - solver: OpenFOAM
+        name: p

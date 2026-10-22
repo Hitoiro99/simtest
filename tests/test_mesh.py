@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 SCRIPT = (
     Path(__file__).resolve().parents[1]
-    / "cases" / "shear-decay-2d" / "mesh-preparation" / "create_example_mesh.py"
+    / "cases" / "couette-2d" / "mesh-preparation" / "create_example_mesh.py"
 )
 
 
@@ -24,7 +24,7 @@ def layout(root):
     location.parent.mkdir(parents=True)
     location.write_text("", encoding="utf-8")
     (location.parent / "blockMeshDict").write_text("blockMeshDict", encoding="utf-8")
-    (root / "cases" / "shear-decay-2d").mkdir(parents=True)
+    (root / "cases" / "couette-2d").mkdir(parents=True)
     return location
 
 
@@ -50,9 +50,9 @@ class MeshPreparationTests(unittest.TestCase):
             module.__file__ = str(layout(root))
             self.prepare(module, root)
             self.assertFalse((root / ".build").exists())
-            self.assertTrue((root / "cases" / "shear-decay-2d" / "polyMesh" / "points").is_file())
+            self.assertTrue((root / "cases" / "couette-2d" / "polyMesh" / "points").is_file())
             self.assertTrue(
-                (root / "cases" / "shear-decay-2d" / "mesh-provenance" / "manifest.json").is_file()
+                (root / "cases" / "couette-2d" / "mesh-provenance" / "manifest.json").is_file()
             )
 
     def test_checkmesh_failure_keeps_build_directory(self):
@@ -63,4 +63,4 @@ class MeshPreparationTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 self.prepare(module, root, mesh_ok=False)
             self.assertTrue((root / ".build" / "mesh" / "checkMesh.log").is_file())
-            self.assertFalse((root / "cases" / "shear-decay-2d" / "polyMesh").exists())
+            self.assertFalse((root / "cases" / "couette-2d" / "polyMesh").exists())

@@ -21,43 +21,43 @@ FoamFile
         type            cyclic;
         inGroups        List<word> 1(cyclic);
         nFaces          32;
-        startFace       220;
+        startFace       976;
         matchTolerance  0.0001;
         neighbourPatch  right;
         transformType   translational;
-        separation      (-0.1 0 0);
+        separation      (-0.9999999999999998 0 0);
     }
     right
     {
         type            cyclic;
         inGroups        List<word> 1(cyclic);
         nFaces          32;
-        startFace       252;
+        startFace       1008;
         matchTolerance  0.0001;
         neighbourPatch  left;
         transformType   translational;
-        separation      (0.1 0 0);
+        separation      (0.9999999999999998 0 0);
     }
     lowerWall
     {
         type            wall;
         inGroups        List<word> 1(wall);
-        nFaces          4;
-        startFace       284;
+        nFaces          16;
+        startFace       1040;
     }
     upperWall
     {
         type            wall;
         inGroups        List<word> 1(wall);
-        nFaces          4;
-        startFace       288;
+        nFaces          16;
+        startFace       1056;
     }
     frontAndBack
     {
         type            empty;
         inGroups        List<word> 1(empty);
-        nFaces          256;
-        startFace       292;
+        nFaces          1024;
+        startFace       1072;
     }
 )
 

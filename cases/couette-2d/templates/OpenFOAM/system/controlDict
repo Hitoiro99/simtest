@@ -6,12 +6,12 @@ FoamFile
 }
 application icoFoam;
 startFrom startTime;
-startTime 0;
+startTime {{ start_time | real }};
 stopAt endTime;
-endTime 1;
-deltaT 0.001;
+endTime {{ end_time | real }};
+deltaT {{ time_step | real }};
 writeControl timeStep;
-writeInterval 100;
+writeInterval {{ write_interval | integer }};
 purgeWrite 0;
 writeFormat ascii;
 writePrecision 15;

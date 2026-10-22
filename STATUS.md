@@ -252,3 +252,13 @@
 - 操作：修改 `AGENTS.md`，规定代码功能修改只读取 `STATUS.md` 的记录规则和功能状态，并仅在文件末尾追加记录；规定每实现一个可独立验证的功能即创建一次本地 Git 提交，不自动推送远端。
 - 操作：修改 `STATUS.md`，仅在文件末尾追加本记录；新增、删除、移动/重命名文件：无。
 - 验证：检查 `AGENTS.md` 差异和 `STATUS.md` 末尾内容；本次仅修改工作规则和记录，未运行测试或求解。
+
+### 023｜2026-10-22｜将首个示例替换为二维启动 Couette 流
+
+- 操作：删除 `cases/shear-decay-2d/` 源案例；新增 `cases/couette-2d/`，包含 `Re=10` 工况、启动 Couette 速度和零运动压力参考、OpenFOAM Foundation 12 模板、案例说明、网格制备脚本、参考说明、16×32×1 唯一 `polyMesh/` 及制备追溯。旧 `artifacts/shear-decay-2d/` 历史归档未修改。
+- 操作：修改 `tests/test_cli.py`、`tests/test_core.py`、`tests/test_mesh.py`，将示例引用切换为 `couette-2d`；新增 `tests/test_couette_case.py`，覆盖参数、解析表达式、边界、时间控制、唯一源网格和 patch。修改 `README.md`，更新命令、案例物理定义、解析解、网格和结果说明；平台代码未修改。
+- 操作：使用新案例生成两份不可变归档及一份派生报告；成功归档后两个 `runs/<job-id>/` 工作区均已整体移除。修改 `STATUS.md` 时只在文件末尾追加本记录。
+- 验证：真实 OpenFOAM Foundation 12 `blockMesh`、`checkMesh` 通过，网格为 512 个六面体单元、范围 `(0 0 0)`—`(1 1 0.01)`，结果为 `Mesh OK`；WSL 下完整 84 项 unittest 全部通过。
+- 验证：`list cases` 仅发现 `couette-2d/Re=10`，`validate couette-2d` 返回 `valid: true`；`prepare-only` 生成串行和 MPI 两个稳定作业，随后完整运行均为 `SUCCEEDED`。每份归档包含 1001 条各监控记录、11 个实际时刻的速度和压力共 22 个 VTU、55 条可用比较且无 `UNAVAILABLE`；速度最大绝对误差为 `0.00173914959470683 m/s`。
+- 验证：重复运行返回相同作业 ID，两个作业及同一报告均为 `reused: true`，未新增重复数据。报告位于 `artifacts/couette-2d/reports/bae3642008bfa587694a88da00db089487b54971b1200914c99ed290027cd969/report.html`。
+- 验证：浏览器回归通过加载和前置检查，但仍在既有 `Box zoom did not change range` 断言失败；该问题在案例替换前已有记录，本次未修改报告交互代码，不能将浏览器全量回归记为通过。未验证 OpenMP/CUDA 后端及 OpenFOAM v2506。

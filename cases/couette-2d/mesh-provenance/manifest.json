@@ -1,0 +1,56 @@
+{
+  "case": "couette-2d",
+  "commands": [
+    {
+      "argv": [
+        "/opt/openfoam12/platforms/linux64GccDPInt32Opt/bin/blockMesh",
+        "-case",
+        "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh"
+      ],
+      "cwd": "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh",
+      "exit_code": 0,
+      "start": "2026-10-22T01:37:31.282394+00:00",
+      "end": "2026-10-22T01:37:31.523466+00:00",
+      "wall_seconds": 0.2410950999999999,
+      "cpu_seconds": 0.071186,
+      "peak_memory_bytes": 45940736,
+      "memory_method": "sampled process-group RSS + wait4 ru_maxrss",
+      "log": "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh/blockMesh.log"
+    },
+    {
+      "argv": [
+        "/opt/openfoam12/platforms/linux64GccDPInt32Opt/bin/checkMesh",
+        "-case",
+        "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh"
+      ],
+      "cwd": "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh",
+      "exit_code": 0,
+      "start": "2026-10-22T01:37:31.523695+00:00",
+      "end": "2026-10-22T01:37:31.760806+00:00",
+      "wall_seconds": 0.23712769999999983,
+      "cpu_seconds": 0.05085,
+      "peak_memory_bytes": 43425792,
+      "memory_method": "sampled process-group RSS + wait4 ru_maxrss",
+      "log": "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh/checkMesh.log"
+    }
+  ],
+  "definition_sha256": "f4205b1251782c3f2d29ff9d0ae06b4054d2ee4da1a7752a715afda38e194584",
+  "geometry_m": {
+    "length": 1.0,
+    "gap": 1.0,
+    "depth": 0.01
+  },
+  "cells": {
+    "x": 16,
+    "y": 32,
+    "z": 1
+  },
+  "mesh_sha256": {
+    "boundary": "6005f3873f7b6b91a830322bc4330bf6f74d525ba992cadff07bcc08aab9f9eb",
+    "faces": "06199e042c3ae6ad3638c1ffbde337e46fb0e5fd20cba1fada981e84699a94e8",
+    "neighbour": "748d5140d4f84d435f5176fb308998551d83bbe2a944a60cbd59dd014667db7e",
+    "owner": "7f286a10e65938a50f7ce14cfb52ec1ce3622bf245b4a06b452cabddc42748d4",
+    "points": "26ab80e60182fed8a3bd6ba031dbf569c6436cc55700aedb9cb00618b89fca9a"
+  },
+  "generator": "OpenFOAM Foundation 12 blockMesh"
+}

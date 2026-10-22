@@ -15,6 +15,7 @@ from solvers.OpenFOAM.adapter import OpenFOAMAdapter
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CASE_ID = "couette-2d"
 
 
 class CliTests(unittest.TestCase):
@@ -22,8 +23,8 @@ class CliTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        self.case_path = self.root / "cases" / "shear-decay-2d"
-        shutil.copytree(ROOT / "cases" / "shear-decay-2d", self.case_path)
+        self.case_path = self.root / "cases" / CASE_ID
+        shutil.copytree(ROOT / "cases" / CASE_ID, self.case_path)
         self.case_file = self.case_path / "case.yaml"
 
     def invoke(self, *arguments):
@@ -37,9 +38,9 @@ class CliTests(unittest.TestCase):
         info = SimpleNamespace(version="12", capabilities=["serial", "mpi"])
         adapter = OpenFOAMAdapter()
         with patch("simtest.select_install", return_value=({}, {}, info, adapter)):
-            return self.invoke("validate", "shear-decay-2d")
+            return self.invoke("validate", CASE_ID)
 
-    def test_validate_accepts_default_and_partial_execution(self):
+    def test_validate_accepts_omitted_and_partial_execution(self):
         original = yaml.safe_load(self.case_file.read_text(encoding="utf-8"))
         for execution in (None, {"backend": "serial"}):
             with self.subTest(execution=execution):
@@ -67,7 +68,7 @@ class CliTests(unittest.TestCase):
         (self.case_path / "polyMesh" / "boundary").unlink()
         code, stdout, stderr = self.invoke("list", "cases")
         self.assertEqual(code, 0, stderr)
-        self.assertEqual(json.loads(stdout)[0]["id"], "shear-decay-2d")
+        self.assertEqual(json.loads(stdout)[0]["id"], CASE_ID)
         code, stdout, stderr = self.validate()
         self.assertEqual(code, 2)
         self.assertEqual(stdout, "")
@@ -86,7 +87,7 @@ class CliTests(unittest.TestCase):
     def test_run_without_conditions_reports_missing_conditions(self):
         for condition in (self.case_path / "conditions").glob("*.yaml"):
             condition.unlink()
-        code, stdout, stderr = self.invoke("run", "shear-decay-2d")
+        code, stdout, stderr = self.invoke("run", CASE_ID)
         self.assertEqual(code, 2)
         self.assertEqual(stdout, "")
         self.assertEqual(json.loads(stderr)["message"], "没有工况")
@@ -103,18 +104,18 @@ class CliTests(unittest.TestCase):
             "simtest.run_job", side_effect=results
         ), patch("report.report", return_value={"report": "report.html"}) as report:
             code, stdout, stderr = self.invoke(
-                "run", "shear-decay-2d", "--solver", "OpenFOAM@12", "--solver", "OpenFOAM@latest"
+                "run", CASE_ID, "--solver", "OpenFOAM@12", "--solver", "OpenFOAM@latest"
             )
         self.assertEqual(code, 1)
         self.assertEqual(stderr, "")
         self.assertEqual(len(stdout.splitlines()), 5)
-        report.assert_called_once_with(self.root, "shear-decay-2d", ["job-a", "job-b", "job-c", "job-d"])
+        report.assert_called_once_with(self.root, CASE_ID, ["job-a", "job-b", "job-c", "job-d"])
 
     def test_prepare_only_does_not_generate_report(self):
         with patch("simtest.prepare_job", return_value=(object(), object())) as prepare, patch(
             "simtest.run_job", return_value={"job_id": "prepared", "status": "QUEUED"}
         ), patch("report.report") as report:
-            code, stdout, stderr = self.invoke("run", "shear-decay-2d", "--prepare-only")
+            code, stdout, stderr = self.invoke("run", CASE_ID, "--prepare-only")
         self.assertEqual(code, 0)
         self.assertEqual(stderr, "")
         lines = [json.loads(line) for line in stdout.splitlines()]

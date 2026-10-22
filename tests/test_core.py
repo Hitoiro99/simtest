@@ -131,7 +131,7 @@ class CoreTests(unittest.TestCase):
 
     def test_namespace_collision(self):
         root = Path(__file__).resolve().parents[1]
-        original = read_yaml(root / "cases" / "shear-decay-2d" / "case.yaml")
+        original = read_yaml(root / "cases" / "couette-2d" / "case.yaml")
         with tempfile.TemporaryDirectory() as temp:
             import yaml
 
