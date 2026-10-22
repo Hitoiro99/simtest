@@ -453,8 +453,28 @@
         toggle.onclick = () => set(!section.classList.contains('collapsed'));
         section.querySelector('h2').onclick = () => set(!section.classList.contains('collapsed'));
     });
-    document.getElementById('expand-all').onclick = () => sections.forEach(section => section.classList.remove('collapsed'));
-    document.getElementById('collapse-all').onclick = () => sections.forEach(section => section.classList.add('collapsed'));
+    const floating = document.getElementById('floating-collapse');
+    const syncFloating = () => {
+        const collapsed = sections.every(section => section.classList.contains('collapsed'));
+        floating.dataset.collapsed = String(collapsed);
+        floating.textContent = collapsed ? '全部展开' : '全部收起';
+    };
+    const setAll = collapsed => {
+        sections.forEach(section => section.classList.toggle('collapsed', collapsed));
+        syncFloating();
+    };
+    document.getElementById('expand-all').onclick = () => setAll(false);
+    document.getElementById('collapse-all').onclick = () => setAll(true);
+    floating.onclick = () => setAll(floating.dataset.collapsed !== 'true');
+    sections.forEach(section => {
+        const toggle = section.querySelector('.section-toggle');
+        const original = toggle.onclick;
+        toggle.onclick = () => { original(); syncFloating(); };
+        const heading = section.querySelector('h2');
+        const click = heading.onclick;
+        heading.onclick = () => { click(); syncFloating(); };
+    });
+    syncFloating();
 
     const groups = {residual: 'residual-charts', analytical: 'analytical-charts', monitor: 'monitor-charts'};
     const flat = [];

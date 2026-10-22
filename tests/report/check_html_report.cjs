@@ -198,6 +198,12 @@ async function main() {
         assert.equal(await evaluate('document.querySelector("#jobs").classList.contains("collapsed")'), true);
         await evaluate('document.getElementById("expand-all").click()');
         assert.equal(await evaluate('document.querySelector("#jobs").classList.contains("collapsed")'), false);
+        await evaluate('document.getElementById("floating-collapse").click()');
+        assert.equal(await evaluate('document.querySelectorAll("[data-section].collapsed").length'),
+            await evaluate('document.querySelectorAll("[data-section]").length'));
+        assert.equal(await evaluate('document.getElementById("floating-collapse").textContent'), '全部展开');
+        await evaluate('document.getElementById("floating-collapse").click()');
+        assert.equal(await evaluate('document.querySelectorAll("[data-section].collapsed").length'), 0);
         await click('select');
         await drag([0.3, 0.3], [0.7, 0.6]);
         const selected = await view();

@@ -308,3 +308,9 @@
 - 目的：按截图调整筛选/排序交互：漏斗图标触发、飞书式面板、每行末尾选择升序/降序且互斥、折叠按钮无边框并与标题合并、追溯条目使用统一箭头。
 - 操作：修改 `report_assets/report.js`，移除独立排序行，在条件行“值”和“×”之间加入排序选择，选择排序时清除其他行排序；修改 `report_assets/report.css`，重做筛选面板、图标按钮、无边框折叠和 `details` 箭头；修改 `tests/report/check_html_report.cjs`，按 200 步样本更新断言并新增筛选/折叠检查。
 - 验证：`test_report.py` 15 项通过；浏览器回归通过新增的 3 个筛选框、序号、折叠/全部展开断言，随后仍在既有 `Box zoom did not change range` 失败。`test_couette_case` 旧期望仍未修复。
+
+### 031｜2026-10-22｜报告标题吸顶与浮动收起按钮
+
+- 目的：长图/长表滚动时无需回到区块开头即可收起；全局随时可一键收起或展开。
+- 操作：修改 `report_assets/report.css`，区块标题栏吸顶、浮动按钮样式；修改 `report_assets/report.html` 增加右下角浮动按钮；修改 `report_assets/report.js`，同步浮动按钮与全部展开/收起状态，并让标题点击更新按钮文案；修改 `tests/report/check_html_report.cjs` 增加浮动按钮断言。
+- 验证：浏览器回归通过 3 个筛选框、序号、标题折叠、全部展开、浮动按钮收起/展开断言，随后仍在既有 `Box zoom did not change range` 失败。
