@@ -153,9 +153,9 @@ async function main() {
         assert.match(initial.xAxis[0].name, /Step|步/);
         assert.equal(initial.yAxis[0].type, 'log');
         for (const series of residual.series.filter(item => !item.reference)) {
-            assert.equal(series.points.length, 1000, 'Regression sample must retain all 1000 steps');
+            assert.equal(series.points.length, 200, 'Regression sample must retain all 200 steps');
             assert.equal(series.points[0].x, 1);
-            assert.equal(series.points[999].x, 1000);
+            assert.equal(series.points[199].x, 200);
             assert.ok(series.points.every(point => point.x === point.step));
             assert.ok(series.points.every(point => point.y === null || point.y === point.raw),
                 'Log plotting must not transform original residual values');
@@ -190,6 +190,14 @@ async function main() {
             await call('Input.dispatchMouseEvent', {type: 'mouseReleased', ...at(...b), button: 'left', clickCount: 1});
             await settle();
         };
+        assert.equal(await evaluate('document.querySelectorAll(".filter-toggle").length'), 3,
+            'Each table needs one filter');
+        assert.equal(await evaluate('document.querySelectorAll("[data-table-id]").length'), 3);
+        assert.equal(await evaluate('document.querySelector("#jobs tbody tr td").textContent'), '1');
+        await evaluate('document.querySelector("#jobs h2").click()');
+        assert.equal(await evaluate('document.querySelector("#jobs").classList.contains("collapsed")'), true);
+        await evaluate('document.getElementById("expand-all").click()');
+        assert.equal(await evaluate('document.querySelector("#jobs").classList.contains("collapsed")'), false);
         await click('select');
         await drag([0.3, 0.3], [0.7, 0.6]);
         const selected = await view();

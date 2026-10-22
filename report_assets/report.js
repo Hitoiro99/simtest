@@ -317,33 +317,30 @@
         }
         build() {
             const box = element('div', null, this.host, {class: 'filter'});
-            const toggle = element('button', '筛选 / 排序', box, {type: 'button', class: 'filter-toggle'});
+            const toggle = element('button', null, box, {type: 'button', class: 'filter-toggle', title: '筛选 / 排序'});
+            toggle.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3 5h18l-7 8v6l-4 2v-8L3 5z"/></svg>';
             const panel = element('div', null, box, {class: 'filter-panel'});
             panel.hidden = true;
             toggle.onclick = () => { panel.hidden = !panel.hidden; };
-            const mode = element('select', null, panel);
-            element('option', '符合以下 所有', mode, {value: 'all'});
-            element('option', '符合以下 任一', mode, {value: 'any'});
-            const list = element('div', null, panel);
-            const add = element('button', '+ 添加条件', panel, {type: 'button'});
-            const sortRow = element('div', null, panel, {class: 'filter-sort'});
-            element('span', '排序', sortRow);
-            const sortField = element('select', null, sortRow);
-            element('option', '不排序', sortField, {value: ''});
-            this.columns.forEach(column => element('option', column.label, sortField, {value: column.key}));
-            const sortOrder = element('select', null, sortRow);
-            element('option', '升序', sortOrder, {value: 'asc'});
-            element('option', '降序', sortOrder, {value: 'desc'});
+            const head = element('div', null, panel, {class: 'filter-head'});
+            element('strong', '设置筛选条件', head);
+            const modeBox = element('div', null, head, {class: 'filter-mode'});
+            element('span', '符合以下', modeBox);
+            const mode = element('select', null, modeBox);
+            element('option', '所有', mode, {value: 'all'});
+            element('option', '任一', mode, {value: 'any'});
+            const list = element('div', null, panel, {class: 'filter-list'});
+            const add = element('button', '+ 添加条件', panel, {type: 'button', class: 'filter-add'});
             const actions = element('div', null, panel, {class: 'filter-actions'});
-            element('button', '应用', actions, {type: 'button'}).onclick = () => this.apply(mode.value, list, sortField.value, sortOrder.value);
+            element('button', '应用', actions, {type: 'button', class: 'primary'}).onclick = () => this.apply(mode.value, list);
             element('button', '重置', actions, {type: 'button'}).onclick = () => {
                 list.replaceChildren();
-                sortField.value = '';
-                this.apply('all', list, '', 'asc');
+                this.row(list);
+                this.apply('all', list);
             };
             add.onclick = () => this.row(list);
             this.row(list);
-            this.apply('all', list, '', 'asc');
+            this.apply('all', list);
         }
         row(list) {
             const row = element('div', null, list, {class: 'filter-row'});
@@ -351,6 +348,20 @@
             this.columns.forEach(column => element('option', column.label, field, {value: column.key}));
             const operator = element('select', null, row);
             const input = element('input', null, row);
+            const order = element('select', null, row, {class: 'filter-order', title: '排序'});
+            element('option', '不排序', order, {value: ''});
+            element('option', '升序', order, {value: 'asc'});
+            element('option', '降序', order, {value: 'desc'});
+            order.onchange = () => {
+                if (!order.value) {
+                    return;
+                }
+                list.querySelectorAll('.filter-order').forEach(other => {
+                    if (other !== order) {
+                        other.value = '';
+                    }
+                });
+            };
             const update = () => {
                 operator.replaceChildren();
                 const type = this.columns.find(column => column.key === field.value).type;
@@ -365,39 +376,58 @@
             update();
             element('button', '×', row, {type: 'button', class: 'filter-remove'}).onclick = () => row.remove();
         }
-        apply(mode, list, sortKey, sortOrder) {
+        apply(mode, list) {
             const conditions = Array.from(list.children).map(row => {
                 const selects = row.querySelectorAll('select');
-                return {key: selects[0].value, op: selects[1].value, value: row.querySelector('input').value};
-            }).filter(item => item.value !== '');
+                return {
+                    key: selects[0].value,
+                    op: selects[1].value,
+                    value: row.querySelector('input').value,
+                    order: selects[2].value,
+                    type: this.columns.find(column => column.key === selects[0].value).type
+                };
+            });
+            const filters = conditions.filter(item => item.value !== '');
+            const sorted = conditions.find(item => item.order);
             const test = (data, item) => {
                 const actual = data[item.key];
-                if (actual == null) return false;
-                if (item.op === 'contains') return String(actual).includes(item.value);
+                if (actual == null) {
+                    return false;
+                }
+                if (item.op === 'contains') {
+                    return String(actual).includes(item.value);
+                }
+                if (item.type === 'number') {
+                    const left = Number(actual);
+                    const right = Number(item.value);
+                    if (item.op === 'eq') return left === right;
+                    if (item.op === 'ne') return left !== right;
+                    if (item.op === 'gt') return left > right;
+                    if (item.op === 'ge') return left >= right;
+                    if (item.op === 'lt') return left < right;
+                    return left <= right;
+                }
                 if (item.op === 'eq') return String(actual) === item.value;
                 if (item.op === 'ne') return String(actual) !== item.value;
-                const left = Number(actual);
-                const right = Number(item.value);
-                if (item.op === 'gt') return left > right;
-                if (item.op === 'ge') return left >= right;
-                if (item.op === 'lt') return left < right;
-                return left <= right;
+                return String(actual).includes(item.value);
             };
             const visible = this.rows.filter(row => {
                 const data = JSON.parse(row.dataset.values);
-                if (!conditions.length) return true;
-                const results = conditions.map(item => test(data, item));
+                if (!filters.length) {
+                    return true;
+                }
+                const results = filters.map(item => test(data, item));
                 return mode === 'any' ? results.some(Boolean) : results.every(Boolean);
             });
-            if (sortKey) {
-                const column = this.columns.find(item => item.key === sortKey);
+            if (sorted) {
+                const column = this.columns.find(item => item.key === sorted.key);
                 visible.sort((a, b) => {
-                    const left = JSON.parse(a.dataset.values)[sortKey];
-                    const right = JSON.parse(b.dataset.values)[sortKey];
-                    const order = column.type === 'number'
+                    const left = JSON.parse(a.dataset.values)[sorted.key];
+                    const right = JSON.parse(b.dataset.values)[sorted.key];
+                    const value = column.type === 'number'
                         ? Number(left) - Number(right)
                         : String(left).localeCompare(String(right));
-                    return sortOrder === 'desc' ? -order : order;
+                    return sorted.order === 'desc' ? -value : value;
                 });
             }
             this.body.replaceChildren(...visible);
@@ -421,6 +451,7 @@
             toggle.setAttribute('aria-expanded', String(!collapsed));
         };
         toggle.onclick = () => set(!section.classList.contains('collapsed'));
+        section.querySelector('h2').onclick = () => set(!section.classList.contains('collapsed'));
     });
     document.getElementById('expand-all').onclick = () => sections.forEach(section => section.classList.remove('collapsed'));
     document.getElementById('collapse-all').onclick = () => sections.forEach(section => section.classList.add('collapsed'));
