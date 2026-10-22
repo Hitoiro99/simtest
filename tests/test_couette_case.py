@@ -5,7 +5,7 @@ import unittest
 
 from case_management.cases import execution_configs, load_case, load_condition
 from case_management.templates import materialize
-from common.expression import evaluate
+from platform_support.expression import evaluate
 from solvers.OpenFOAM.adapter import OpenFOAMAdapter
 
 

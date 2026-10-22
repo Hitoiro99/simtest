@@ -178,13 +178,13 @@ integrity.json  报告产物完整性清单
 | `analysis.py` | 使用统一公式计算监控及解析场参考偏差 | 标准化完成后 |
 | `archive.py` | 查询归档、检查标准文件和哈希、保存归档并控制工作区清理 | 作业收尾及 list runs / report |
 | `report.py`、`report_assets/` | 汇总报告、HTML 交互、静态图及 CSV / JSON；资源支持安装后离线读取 | run 结束或 report 命令 |
-| `common/` | 文件操作、表达式、单位换算与平台版本；不主动启动求解 | 各业务模块复用 |
+| `platform_support/` | 文件操作、表达式、单位换算与平台版本；不主动启动求解 | 各业务模块复用 |
 | `runs/` | 活动、准备和失败作业的工作区；成功归档后整目录移除 | 计算、失败排查 |
 | `artifacts/` | 经校验的结果归档和派生报告 | 长期留存、比较、阅读 |
 | `tests/` | 单元、Reader 及集成回归测试 | 修改代码后验证 |
 | `tests/report/` | HTML 报告的浏览器交互回归 | 开发或专项检查 |
 
-`simtest.py` 负责命令入口；根目录 jobs、analysis、archive、report 对应作业组织、分析器、产物库和报告器。`case_management/`、`common/` 保留已有公共能力，`solvers/` 集中求解器相关行为；不再分别建立运行控制、后处理、存储和报告代码目录。`cases/` 保存物理输入，`runs/` 和 `artifacts/` 保存数据；归档按案例 / 工况 / 内核 / 实际版本 / 稳定作业 ID 组织。
+`simtest.py` 负责命令入口；根目录 jobs、analysis、archive、report 对应作业组织、分析器、产物库和报告器。`case_management/`、`platform_support/` 保留已有公共能力，`solvers/` 集中求解器相关行为；不再分别建立运行控制、后处理、存储和报告代码目录。`cases/` 保存物理输入，`runs/` 和 `artifacts/` 保存数据；归档按案例 / 工况 / 内核 / 实际版本 / 稳定作业 ID 组织。
 
 `solvers/registry.py` 登记和选择本机已有安装，使用 Adapter 的主程序标识与版本比较规则；`base.py` 统一进程监督及辅助执行。OpenFOAM Adapter 的 `read_log()`、`read_tables()`、`read_monitors()`、`output_times()` 和 `read_fields()` 处理原生结果，`postprocess()` 通过实例方法调用，版本类可以只重载发生变化的部分。`vtk_bridge.py` 位于对应内核目录，由独立 pvpython 执行，平台 Python 不直接加载 VTK。
 

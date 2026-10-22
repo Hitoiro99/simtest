@@ -11,10 +11,10 @@ from unittest.mock import patch
 from analysis import field_comparisons, monitor_comparisons
 from archive import archive, verify_archive
 from case_management.cases import execution_config, execution_configs, load_case, load_condition, mesh_asset
-from common.expression import evaluate
-from common.io import read_yaml
+from platform_support.expression import evaluate
+from platform_support.io import read_yaml
 from case_management.templates import materialize
-from common.units import convert
+from platform_support.units import convert
 from solvers.base import SolverAdapter, supervise
 from solvers.exceptions import (
     ConfigurationError,

@@ -20,7 +20,7 @@ import sys
 from analysis import field_comparisons, monitor_comparisons
 from archive import archive, archive_path, cleanup_run, verify_archive
 from case_management.cases import execution_config, execution_configs, load_case, load_condition
-from common.io import atomic_json, identifier, inventory, sha256, within
+from platform_support.io import atomic_json, identifier, inventory, sha256, within
 from solvers.base import redact, run_capture
 from solvers.exceptions import (
     CancelledError,
@@ -57,7 +57,7 @@ def code_inventory():
     """返回受维护执行代码的相对路径和内容哈希；不包含文档、缓存或运行生成物。"""
     source_root = Path(__file__).resolve().parent
     hashes = {name: sha256(source_root / name) for name in ("simtest.py", "jobs.py", "analysis.py", "archive.py", "report.py")}
-    for name in ("case_management", "report_assets", "common", "solvers"):
+    for name in ("case_management", "report_assets", "platform_support", "solvers"):
         for relative, digest in inventory(source_root / name).items():
             if relative.endswith((".py", ".js", ".css")):
                 hashes[(Path(name) / relative).as_posix()] = digest
@@ -241,7 +241,7 @@ def prepare_job(root, case_id, condition_id, selector, options, execution=None):
         root, path, root / "runs" / job_id, case, condition, condition_id, parameters,
         execution, installation, environment, info, timeout, heartbeat_timeout,
     )
-    from common.version import __version__
+    from platform_support.version import __version__
 
     revision = _git_revision(root)
     context.manifest = {

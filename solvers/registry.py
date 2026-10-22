@@ -8,7 +8,7 @@ import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
-from common.io import atomic_text, read_yaml
+from platform_support.io import atomic_text, read_yaml
 
 from .exceptions import ConfigurationError, PreprocessError, UnsupportedCaseError, VersionMismatchError
 

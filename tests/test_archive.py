@@ -11,7 +11,7 @@ from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
 from archive import archive, archive_path, cleanup_run, load_observations, manifest_digest, verify_archive
-from common.io import atomic_json, inventory
+from platform_support.io import atomic_json, inventory
 from solvers.exceptions import PostprocessError
 
 

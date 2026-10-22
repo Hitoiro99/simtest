@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 import jobs
-from common.io import inventory
+from platform_support.io import inventory
 from solvers.exceptions import ConfigurationError, PostprocessError, SolverCrashError
 from solvers.models import SolverInfo, StageResult
 

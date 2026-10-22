@@ -5,9 +5,9 @@ import re
 from pathlib import Path
 
 from solvers.exceptions import ConfigurationError
-from common.expression import evaluate, validate_expression
-from common.io import identifier, read_yaml, sha256, within
-from common.units import convert, parse
+from platform_support.expression import evaluate, validate_expression
+from platform_support.io import identifier, read_yaml, sha256, within
+from platform_support.units import convert, parse
 
 
 def mapping(value, label):

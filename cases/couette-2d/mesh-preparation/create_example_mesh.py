@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from common.io import atomic_json, inventory, sha256
+from platform_support.io import atomic_json, inventory, sha256
 from solvers.base import find_tool, supervise
 from solvers.models import Command
 from solvers.registry import load_env

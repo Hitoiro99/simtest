@@ -20,7 +20,7 @@ from jinja2 import Environment, StrictUndefined
 
 from analysis import field_comparisons, monitor_comparisons
 from archive import load_observations, verify_archive
-from common.io import atomic_json, atomic_text, identifier, inventory, json_safe, sha256
+from platform_support.io import atomic_json, atomic_text, identifier, inventory, json_safe, sha256
 from solvers.base import redact
 from solvers.exceptions import ConfigurationError, PostprocessError
 from solvers.registry import version_key

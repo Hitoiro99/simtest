@@ -6,7 +6,7 @@ from jinja2.sandbox import SandboxedEnvironment
 
 from solvers.exceptions import ConfigurationError, PreprocessError, UnsupportedCaseError
 from solvers.registry import compatibility
-from common.io import identifier, inventory, read_yaml, within
+from platform_support.io import identifier, inventory, read_yaml, within
 
 
 def choose(case_path, adapter):

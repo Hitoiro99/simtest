@@ -314,3 +314,9 @@
 - 目的：长图/长表滚动时无需回到区块开头即可收起；全局随时可一键收起或展开。
 - 操作：修改 `report_assets/report.css`，区块标题栏吸顶、浮动按钮样式；修改 `report_assets/report.html` 增加右下角浮动按钮；修改 `report_assets/report.js`，同步浮动按钮与全部展开/收起状态，并让标题点击更新按钮文案；修改 `tests/report/check_html_report.cjs` 增加浮动按钮断言。
 - 验证：浏览器回归通过 3 个筛选框、序号、标题折叠、全部展开、浮动按钮收起/展开断言，随后仍在既有 `Box zoom did not change range` 失败。
+
+### 032｜2026-10-22｜common 包更名为 platform_support
+
+- 目的：`common` 名称过泛，改为能表达“平台支撑层”的 `platform_support`。
+- 操作：`git mv common platform_support`；替换 16 个 Python 文件的导入（含案例网格脚本与测试）；更新 `pyproject.toml` 包发现、`jobs.py` 代码清单、`AGENTS.md` 与 `README.md` 的目录说明。历史 STATUS 记录不修改。
+- 验证：`list cases` 正常；WSL Ubuntu / Python 3.8.10 下完整 86 项 unittest 通过 82 项，仍为 `test_couette_case` 的 4 项旧瞬态期望失败，与本次改名无关。

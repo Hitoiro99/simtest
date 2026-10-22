@@ -8,7 +8,7 @@ from pathlib import Path
 import shutil
 import xml.etree.ElementTree as ET
 
-from common.io import atomic_json, identifier, inventory, json_safe, within
+from platform_support.io import atomic_json, identifier, inventory, json_safe, within
 from solvers.exceptions import ConfigurationError, PostprocessError
 
 

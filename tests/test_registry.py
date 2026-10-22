@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import yaml
 
-from common.io import read_yaml
+from platform_support.io import read_yaml
 from solvers import registry
 from solvers.base import SolverAdapter
 from solvers.exceptions import ConfigurationError, VersionMismatchError

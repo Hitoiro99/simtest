@@ -1,7 +1,7 @@
 import math
-from common.expression import evaluate
+from platform_support.expression import evaluate
 from solvers.exceptions import ConfigurationError
-from common.units import convert, parse
+from platform_support.units import convert, parse
 
 
 def statistics(errors, samples):

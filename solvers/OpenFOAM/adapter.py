@@ -9,8 +9,8 @@ import shutil
 from pathlib import Path
 
 from case_management.cases import mesh_asset
-from common.io import atomic_json, inventory, within
-from common.units import factor
+from platform_support.io import atomic_json, inventory, within
+from platform_support.units import factor
 from case_management.templates import materialize
 from . import __name__ as _package_name
 from solvers.base import SolverAdapter, find_tool, run_capture, supervise

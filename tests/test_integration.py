@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from archive import archive, verify_archive
 from solvers.registry import load_env
-from common.io import atomic_json, inventory
+from platform_support.io import atomic_json, inventory
 from solvers.exceptions import PostprocessError, SolverCrashError
 from solvers.OpenFOAM.adapter import OpenFOAMAdapter
 from solvers.base import supervise as real_supervise

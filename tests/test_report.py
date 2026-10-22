@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from archive import archived_runs, manifest_digest
 from simtest import parser
-from common.io import atomic_json, inventory
+from platform_support.io import atomic_json, inventory
 from report import build_charts, field_step, final_field_rows, log_tick_label, monitor_rows, render_html, report
 from solvers.exceptions import ConfigurationError, PostprocessError
 
