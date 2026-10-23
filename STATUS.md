@@ -330,3 +330,10 @@
 - 目的：阅读顺序建议为 `ARCHITECTURE.md`、`AGENTS.md`、本文件的记录规则与功能状态、末尾记录 023—033、`README.md`，再阅读与具体任务直接相关的代码。注意本文件顶部功能表中的“固定报告模板与离线 ECharts”仍写为“部分实现”，其描述早于记录 024—031；受追加式历史规则约束未回写，判断最新状态时以末尾记录和当前代码为准。
 - 操作：仅修改 `STATUS.md`，追加本交接记录；新增、删除、移动/重命名文件：无；代码、案例、归档和报告均未修改。
 - 验证：修改前确认 Git 工作区无未提交改动，并核对 `ARCHITECTURE.md`、`README.md`、`STATUS.md` 的章节结构、`STATUS.md` 最新记录及最近 8 次提交。本次仅追加文档，未运行单元测试、求解器或浏览器回归；上述测试结果均明确标注为最近一次历史结果，不作为本次验证。
+
+### 034｜2026-10-23｜恢复 Couette 案例测试基线
+
+- 基线：工作区基于 `main`；Foundation 12 仍是唯一真实接入版本；稳态 Couette 串行/MPI 已成功归档。
+- 操作：修改 `tests/test_couette_case.py`，把旧瞬态期望更新为稳态 `simpleFoam` 案例：`wall_gap=0.01`、`ν=0.001`、`0–200` 迭代、`write_interval=20`；解析式改为 `u=U*y/H`；模板断言改为 inlet/outlet/movingWall；网格断言改为两段 `120 8 1`。
+- 验证：`test_couette_case.py` 4 项通过；WSL Ubuntu / Python 3.8.10 下完整 86 项 unittest 全部通过。未运行浏览器回归，未接入 v2506。
+- 未解决：浏览器 `Box zoom` 仍失败；OpenCFD 2506 未接入；下一步按方案把 `adapter.py` 拆为公共层与 `versions/v12.py`。
