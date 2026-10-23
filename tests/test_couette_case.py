@@ -8,6 +8,7 @@ from case_management.cases import execution_configs, load_case, load_condition
 from case_management.templates import materialize
 from platform_support.expression import evaluate
 from solvers.OpenFOAM.versions.v12 import V12
+from solvers.OpenFOAM.versions.v2506 import V2506
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -111,6 +112,27 @@ class CouetteCaseTests(unittest.TestCase):
         self.assertRegex(controls, r"(?m)^endTime\s+200;$")
         self.assertRegex(controls, r"(?m)^deltaT\s+1;$")
         self.assertRegex(controls, r"(?m)^writeInterval\s+20;$")
+
+    def test_v2506_template_extends_foundation_files(self):
+        adapter = V2506()
+        with tempfile.TemporaryDirectory() as temp:
+            input_path = Path(temp) / "input"
+            context = SimpleNamespace(
+                case_path=CASE_PATH,
+                input=input_path,
+                parameters=self.parameters,
+                execution=execution_configs(self.case["execution"])[0],
+                info=SimpleNamespace(name="OpenFOAM", version="2506"),
+                condition_id="Re=10",
+                manifest={},
+            )
+            materialize(context, adapter)
+            velocity = (input_path / "0" / "U").read_text(encoding="utf-8")
+            controls = (input_path / "system" / "controlDict").read_text(encoding="utf-8")
+        self.assertEqual(context.manifest["template"]["id"], "openfoam-opencfd-2506")
+        self.assertEqual(context.manifest["template"]["chain"], ["openfoam-foundation-12", "openfoam-opencfd-2506"])
+        self.assertRegex(controls, r"(?m)^application\s+simpleFoam;$")
+        self.assertIn("movingWall", velocity)
 
     def test_mesh_definition_has_one_source_and_expected_patches(self):
         self.assertTrue((CASE_PATH / "polyMesh").is_dir())

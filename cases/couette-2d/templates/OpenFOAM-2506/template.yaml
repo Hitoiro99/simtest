@@ -1,0 +1,4 @@
+id: openfoam-opencfd-2506
+solver: OpenFOAM
+compatibility: "2506"
+extends: openfoam-foundation-12
