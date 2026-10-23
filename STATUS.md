@@ -386,3 +386,10 @@
 - 操作：`solvers/registry.py` 的 `load_env` 把 `env -0` 写入临时文件、用 `shlex.quote(script)` 直接内联脚本路径，并新增 `path_prepend`；`simtest.py setup` 新增 `--path-prepend`；`solvers/OpenFOAM/adapter.py` 的 `dictionary()` 把 `PWD` 设为字典目录，消除 v2506 PWD 警告污染 stdout；`tests/test_registry.py` 增加 `path_prepend` 测试。
 - 验证：90 项 unittest 通过；真实 v2506 `setup` 成功登记 `branch: OpenCFD` 与 `path_prepend: /opt/paraviewopenfoam510/bin`；`validate couette-2d --solver OpenFOAM@2506` 通过；v2506 串行/MPI 后续真实运行成功。
 - 未解决：v2506 ESI 字典和报告跨分支分组尚未提交。
+
+### 042｜2026-10-23｜v2506 使用 ESI 字典
+
+- 基线：v2506 求解 `simpleFoam` 时要求 `constant/transportProperties` 和 `constant/turbulenceProperties`，Foundation 模板提供的是 `physicalProperties`/`momentumTransport`。
+- 操作：在 `cases/couette-2d/templates/OpenFOAM-2506/constant/` 新增 `transportProperties`（`transportModel Newtonian`、`nu`）和 `turbulenceProperties`（`simulationType laminar`），继承 Foundation 其余文件；`tests/test_couette_case.py` 增加 ESI 字典断言。
+- 验证：90 项 unittest 通过；v2506 串行与 2 进程 MPI 均 `SUCCEEDED`，归档包含 11 个时刻×2 个场共 22 个 VTU，`pvpython` 直读成功；报告均值 `0.5`、末步速度 x 最大误差 `2.33e-8`。
+- 未解决：报告仍按旧方式选择“最新版本”，跨分支会被合并。

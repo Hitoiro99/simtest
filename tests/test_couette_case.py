@@ -129,10 +129,14 @@ class CouetteCaseTests(unittest.TestCase):
             materialize(context, adapter)
             velocity = (input_path / "0" / "U").read_text(encoding="utf-8")
             controls = (input_path / "system" / "controlDict").read_text(encoding="utf-8")
+            transport = (input_path / "constant" / "transportProperties").read_text(encoding="utf-8")
+            turbulence = (input_path / "constant" / "turbulenceProperties").read_text(encoding="utf-8")
         self.assertEqual(context.manifest["template"]["id"], "openfoam-opencfd-2506")
         self.assertEqual(context.manifest["template"]["chain"], ["openfoam-foundation-12", "openfoam-opencfd-2506"])
         self.assertRegex(controls, r"(?m)^application\s+simpleFoam;$")
         self.assertIn("movingWall", velocity)
+        self.assertIn("transportModel  Newtonian;", transport)
+        self.assertIn("simulationType  laminar;", turbulence)
 
     def test_mesh_definition_has_one_source_and_expected_patches(self):
         self.assertTrue((CASE_PATH / "polyMesh").is_dir())
