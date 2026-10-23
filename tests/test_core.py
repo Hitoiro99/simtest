@@ -26,6 +26,7 @@ from solvers.exceptions import (
 )
 from solvers.models import Command, RunContext, SolverInfo
 from solvers.OpenFOAM.versions.v12 import V12
+from solvers.OpenFOAM.versions.v2506 import V2506
 from solvers.registry import ADAPTERS, compatibility, discover, mapped, register_adapter, select
 
 
@@ -106,6 +107,20 @@ class CoreTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ConfigurationError):
                 execution_configs(value)
 
+    def test_v2506_probe_uses_opencfd_banner_and_post_process(self):
+        from solvers.OpenFOAM.versions import v2506 as module
+
+        help_text = "OpenFOAM-2506 (2506) - visit www.openfoam.com\nBuild: _d6aa836d-20260127\n"
+        with patch.object(module, "find_tool", side_effect=lambda name, env: "/opt/" + name), \
+                patch.object(module, "run_capture", return_value=help_text), \
+                patch.object(module.shutil, "which", return_value=None):
+            info = V2506().probe(SimpleNamespace(environment={"PATH": ""}))
+        self.assertEqual(info.version, "2506")
+        self.assertEqual(info.branch, "OpenCFD")
+        self.assertEqual(info.build, "_d6aa836d-20260127")
+        self.assertIn("postProcess", info.executables)
+        self.assertNotIn("foamPostProcess", info.executables)
+
     def test_multiple_parameters_not_limited_to_example(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "case1"
@@ -149,11 +164,11 @@ class CoreTests(unittest.TestCase):
         discover()
         adapter = select("OpenFOAM", "12")
         self.assertEqual(adapter.version, "12")
-        self.assertEqual(select("OpenFOAM", "13").version, "12")
+        self.assertEqual(select("OpenFOAM", "13", branch="Foundation").version, "12")
         with self.assertRaises(UnsupportedCaseError):
             select("OpenFOAM", "11")
         with self.assertRaises(UnsupportedCaseError):
-            select("OpenFOAM", "v2312")
+            select("OpenFOAM", "v2312", branch="Foundation")
         self.assertEqual(compatibility("12", adapter), (True, 3))
         with self.assertRaises(ConfigurationError):
             compatibility(">=11", adapter)

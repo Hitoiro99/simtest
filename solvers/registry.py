@@ -4,7 +4,9 @@ import importlib
 import os
 import pkgutil
 import re
+import shlex
 import subprocess
+import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -103,6 +105,8 @@ def compatibility(condition, adapter):
         op, version = match.groups()
         op = op or "=="
         if version not in {cls.version for cls in _classes(adapter.name, _branch(adapter))}:
+            if version in ADAPTERS.get(adapter.name, {}):
+                return False, 0
             raise ConfigurationError("compatibility 引用未注册变更点: " + version)
         actual = adapter.version_key(adapter.version)
         required = adapter.version_key(version)
@@ -177,7 +181,7 @@ def load_env(installation):
         script = spec.get("script")
         if not isinstance(script, str) or not Path(script).is_file():
             raise ConfigurationError("环境脚本不存在")
-        argv = ["bash", "-c", 'source "$1" >/dev/null || exit $?; env -0', "simtest", script]
+        argv = ["bash", "-c", "source " + shlex.quote(script) + " >/dev/null || exit $?; env -0"]
     elif kind == "module":
         if "script" in spec:
             raise ConfigurationError("module 不允许 script")
@@ -191,11 +195,16 @@ def load_env(installation):
         argv = ["bash", "-lc", 'module load "$@" >/dev/null || exit $?; env -0', "simtest"] + modules
     else:
         raise ConfigurationError("未知 environment.kind")
-    result = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=base, timeout=30)
+    with tempfile.TemporaryFile() as captured:
+        result = subprocess.run(
+            argv, stdout=captured, stderr=subprocess.PIPE, env=base, timeout=30
+        )
+        captured.seek(0)
+        stdout = captured.read()
     if result.returncode:
         raise PreprocessError("环境加载失败: " + result.stderr.decode("utf-8", "replace")[-2000:])
     environment = {}
-    for pair in result.stdout.split(b"\0"):
+    for pair in stdout.split(b"\0"):
         if b"=" in pair:
             key, value = pair.split(b"=", 1)
             environment[key.decode("utf-8", "replace")] = value.decode("utf-8", "replace")

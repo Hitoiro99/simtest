@@ -358,3 +358,10 @@
 - 操作：删除 `OpenFOAMAdapter.case_application()`；`v12.probe()` 只用 `main_executable` 探测版本并登记基础工具，不再接收 `case_path`；`select_install()` 去掉 `case_path`；`jobs.py`、`simtest.py` 调用点同步；案例 `application` 改由 `preprocess()` 在模板渲染后校验并登记；删除对应测试。
 - 验证：完整 86 项 unittest 通过；`validate couette-2d` 通过；`run --prepare-only` 真实执行成功，两个作业进入 `QUEUED`，随后清理。
 - 未解决：v2506 Adapter/模板/环境尚未接入；报告“最新版本”分组尚未按分支隔离。
+
+### 038｜2026-10-23｜新增 OpenCFD v2506 版本类并修正环境加载
+
+- 基线：87 项 unittest 通过；Foundation 12 正常；注册器已支持分支。
+- 操作：新增 `solvers/OpenFOAM/versions/v2506.py`，使用 OpenCFD 横幅、`postProcess`、四位 `YYMM` 版本键；`solvers/registry.py` 的 `load_env` 改为把 `env -0` 写入临时文件，避免后台子进程持有管道导致超时，并改用 `shlex.quote(script)` 内联脚本路径，避免 v2506 bashrc 对 `$1` 的错误处理；`compatibility` 遇到其它分支已注册版本时返回不匹配而不是报错；`tests/test_core.py` 增加 v2506 probe 测试并修正跨分支 `select` 调用。
+- 验证：完整 87 项 unittest 通过；真实 v2506 probe 成功：version `2506`、branch `OpenCFD`、build `_d6aa836d-20260127`、工具含 `postProcess` 与 `pvpython`（pvpython 需额外 PATH）。未运行 v2506 求解。
+- 未解决：v2506 配置/模板/全链路未接入；报告“最新版本”分组尚未按分支隔离。
