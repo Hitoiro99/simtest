@@ -15,9 +15,32 @@ from .exceptions import ConfigurationError, PreprocessError, UnsupportedCaseErro
 ADAPTERS = {}
 
 
+def _branch(adapter):
+    return getattr(adapter, "branch", "") or ""
+
+
+def _classes(name, branch=None):
+    versions = ADAPTERS.get(name, {})
+    if branch is None:
+        return list(versions.values())
+    return [cls for cls in versions.values() if _branch(cls) == branch]
+
+
+def _branch_for_version(name, version):
+    matches = [cls for cls in ADAPTERS.get(name, {}).values() if cls.version == str(version)]
+    branches = {_branch(cls) for cls in matches}
+    if len(branches) == 1:
+        return branches.pop()
+    if not branches:
+        return None
+    raise ConfigurationError("版本 %s 同时属于多个分支，必须显式指定 branch" % version)
+
+
 def register_adapter(cls):
     if not isinstance(getattr(cls, "name", None), str) or not isinstance(getattr(cls, "version", None), str):
         raise ConfigurationError("Adapter 缺少 name/version")
+    if not isinstance(getattr(cls, "branch", ""), str):
+        raise ConfigurationError("Adapter.branch 必须为字符串")
     if getattr(cls, "__abstractmethods__", None):
         raise ConfigurationError("Adapter 未实现所有必需接口")
     for parent in cls.__mro__[1:]:
@@ -26,7 +49,9 @@ def register_adapter(cls):
     key = cls.version_key(cls.version)
     versions = ADAPTERS.setdefault(cls.name, {})
     for registered in versions.values():
-        if registered.version == cls.version or registered.version_key(registered.version) == key:
+        if registered.version == cls.version:
+            raise ConfigurationError("重复 Adapter 版本: " + cls.version)
+        if _branch(registered) == _branch(cls) and registered.version_key(registered.version) == key:
             raise ConfigurationError("重复 Adapter 变更点或排序键")
     versions[cls.version] = cls
     return cls
@@ -41,10 +66,23 @@ def discover():
     return ADAPTERS
 
 
-def select(name, actual_version):
+def select(name, actual_version, branch=None):
     discover()
     versions = ADAPTERS.get(name, {})
-    choices = [cls for cls in versions.values() if cls.version_key(cls.version) <= cls.version_key(actual_version)]
+    if not versions:
+        raise UnsupportedCaseError("求解器未注册")
+    if branch is None:
+        branch = _branch_for_version(name, actual_version)
+        if branch is None:
+            branches = {_branch(cls) for cls in versions.values()}
+            if len(branches) != 1:
+                raise UnsupportedCaseError("跨分支选择必须显式指定 branch")
+            branch = branches.pop()
+    choices = [
+        cls
+        for cls in versions.values()
+        if _branch(cls) == branch and cls.version_key(cls.version) <= cls.version_key(actual_version)
+    ]
     if not choices:
         raise UnsupportedCaseError("版本早于最早变更点或求解器未注册")
     return max(choices, key=lambda cls: cls.version_key(cls.version))()
@@ -64,7 +102,7 @@ def compatibility(condition, adapter):
             raise ConfigurationError("非法 compatibility: " + condition)
         op, version = match.groups()
         op = op or "=="
-        if version not in ADAPTERS[adapter.name]:
+        if version not in {cls.version for cls in _classes(adapter.name, _branch(adapter))}:
             raise ConfigurationError("compatibility 引用未注册变更点: " + version)
         actual = adapter.version_key(adapter.version)
         required = adapter.version_key(version)
@@ -104,13 +142,23 @@ def mapped(declaration, canonical, adapter):
     return matches[0]["name"], matches[0].get("unit", declaration.get("unit", ""))
 
 
-def version_key(name, version):
+def version_key(name, version, branch=None):
     """使用已注册内核的版本规则返回排序键，不读取或探测本机安装。"""
     discover()
     versions = ADAPTERS.get(name, {})
     if not versions:
         raise UnsupportedCaseError("未注册求解器: " + name)
-    public = min(versions.values(), key=lambda cls: cls.version_key(cls.version))
+    if branch is None:
+        branch = _branch_for_version(name, version)
+        if branch is None:
+            branches = {_branch(cls) for cls in versions.values()}
+            if len(branches) != 1:
+                raise UnsupportedCaseError("跨分支版本排序必须显式指定 branch")
+            branch = branches.pop()
+    classes = _classes(name, branch)
+    if not classes:
+        raise UnsupportedCaseError("分支未注册: " + branch)
+    public = min(classes, key=lambda cls: cls.version_key(cls.version))
     return public.version_key(version)
 
 
@@ -171,15 +219,21 @@ def register_install(root, args):
         environment["modules"] = args.environment_module
     installation = {"solver": args.solver, "version": args.version, "path": str(path), "environment": environment}
     activated = load_env(installation)
-    public = min(ADAPTERS[args.solver].values(), key=lambda cls: cls.version_key(cls.version))()
+    candidates = [cls for cls in ADAPTERS[args.solver].values() if cls.version == str(args.version)]
+    if not candidates:
+        raise VersionMismatchError("配置版本没有注册 Adapter: " + str(args.version))
+    public = candidates[0]()
     info = public.probe(SimpleNamespace(environment=activated))
     if info.version != args.version:
         raise VersionMismatchError("配置 %s 与真实 %s 不一致" % (args.version, info.version))
+    branch = getattr(public, "branch", "")
+    if branch:
+        installation["branch"] = branch
     try:
         public.check_installation(info, path)
     except VersionMismatchError as exc:
         raise ConfigurationError("激活后的求解器不属于 --path 指定的安装") from exc
-    select(args.solver, info.version)
+    select(args.solver, info.version, branch or None)
 
     if args.config:
         file = Path(args.config).resolve()
@@ -239,17 +293,36 @@ def select_install(root, selector, config_file=None, case_path=None):
         raise ConfigurationError("没有匹配安装，请先 simtest setup")
 
     found = []
-    public = min(ADAPTERS[name].values(), key=lambda cls: cls.version_key(cls.version))()
+    branches = set()
     for installation in installations:
+        branch = installation.get("branch")
+        if branch is None:
+            branch = _branch_for_version(name, installation["version"])
+        if branch is None:
+            known = {_branch(cls) for cls in ADAPTERS[name].values()}
+            if len(known) == 1:
+                branch = known.pop()
+        if branch is None:
+            raise ConfigurationError("安装缺少 branch，且版本未注册: " + str(installation["version"]))
+        classes = _classes(name, branch)
+        if not classes:
+            raise ConfigurationError("安装分支没有注册 Adapter: " + branch)
+        public = min(classes, key=lambda cls: cls.version_key(cls.version))()
         env = load_env(installation)
         info = public.probe(SimpleNamespace(environment=env, case_path=case_path))
         if info.version != str(installation["version"]):
             raise VersionMismatchError("部署版本与探测版本不一致")
+        expected_branch = getattr(public, "branch", "")
+        if expected_branch and getattr(info, "branch", "") != expected_branch:
+            raise VersionMismatchError("部署分支与探测分支不一致")
         public.check_installation(info, installation["path"])
-        found.append((public.version_key(info.version), installation, env, info))
+        found.append((public.version_key(info.version), branch, installation, env, info))
+        branches.add(branch)
 
+    if requested == "latest" and len(branches) > 1:
+        raise ConfigurationError("跨分支 latest 歧义，请显式指定版本")
     found.sort(key=lambda item: item[0], reverse=True)
     if len(found) > 1 and found[0][0] == found[1][0]:
         raise ConfigurationError("latest 对应多个同版本安装，请消除部署歧义")
-    _, installation, env, info = found[0]
-    return installation, env, info, select(name, info.version)
+    _, branch, installation, env, info = found[0]
+    return installation, env, info, select(name, info.version, branch or None)

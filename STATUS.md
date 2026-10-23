@@ -337,3 +337,17 @@
 - 操作：修改 `tests/test_couette_case.py`，把旧瞬态期望更新为稳态 `simpleFoam` 案例：`wall_gap=0.01`、`ν=0.001`、`0–200` 迭代、`write_interval=20`；解析式改为 `u=U*y/H`；模板断言改为 inlet/outlet/movingWall；网格断言改为两段 `120 8 1`。
 - 验证：`test_couette_case.py` 4 项通过；WSL Ubuntu / Python 3.8.10 下完整 86 项 unittest 全部通过。未运行浏览器回归，未接入 v2506。
 - 未解决：浏览器 `Box zoom` 仍失败；OpenCFD 2506 未接入；下一步按方案把 `adapter.py` 拆为公共层与 `versions/v12.py`。
+
+### 035｜2026-10-23｜拆分 OpenFOAM 公共层与 v12 版本类
+
+- 基线：完整 86 项 unittest 通过；Foundation 12 是唯一真实接入版本。
+- 操作：新增 `solvers/OpenFOAM/versions/v12.py`，把 Foundation 12 的 `version`、`version_key`、`probe` 和分支标识移入；`solvers/OpenFOAM/adapter.py` 只保留公共行为，移除注册装饰器与版本/探测实现，新增 `post_process_tool` 供版本类覆盖；测试改为从 `versions.v12` 导入 `V12`。
+- 验证：完整 86 项 unittest 通过；`list cases` 与 `validate couette-2d` 通过。本轮只做重构，未重新运行求解器和浏览器回归。
+- 未解决：`probe` 仍读取案例模板（下一阶段解耦）；注册器尚无分支维度；v2506 未接入。
+
+### 036｜2026-10-23｜注册器增加求解器分支维度
+
+- 基线：87 项 unittest 通过；v12 已独立为版本类，v2506 尚未注册。
+- 操作：`solvers/registry.py` 新增 `_branch`、`_classes`、`_branch_for_version`；`select` 与 `version_key` 支持分支内排序，跨分支需显式分支，否则报歧义；`compatibility` 只匹配同一分支的变更点；`register_install`/`select_install` 记录并使用安装的 `branch`，旧配置缺 branch 时按已注册版本推断，跨分支 `latest` 报错。`tests/test_registry.py` 新增跨分支 `latest` 歧义与显式版本选择测试。
+- 验证：完整 87 项 unittest 通过；`validate couette-2d` 通过。未重新运行求解器与浏览器回归。
+- 未解决：`probe` 仍读取案例模板；v2506 Adapter/模板/环境尚未接入；报告“最新版本”分组尚未按分支隔离。

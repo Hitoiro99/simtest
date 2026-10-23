@@ -45,6 +45,28 @@ class RegistryAdapter(SolverAdapter):
         raise NotImplementedError
 
 
+class BranchAlpha(RegistryAdapter):
+    name = "BranchTest"
+    branch = "Alpha"
+    version = "1"
+
+    @staticmethod
+    def version_key(version):
+        return int(version)
+
+    def probe(self, context):
+        environment = context.environment
+        return SolverInfo(
+            self.name, environment["TEST_VERSION"], "test-build", self.branch, [],
+            {self.main_executable: environment["TEST_EXECUTABLE"]},
+        )
+
+
+class BranchBeta(BranchAlpha):
+    branch = "Beta"
+    version = "2506"
+
+
 class RegistryTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
@@ -160,6 +182,31 @@ class RegistryTests(unittest.TestCase):
         with patch.object(RegistryAdapter, "probe", side_effect=AssertionError("unexpected installation probe")):
             latest = max(["legacy", "current"], key=lambda version: registry.version_key("RegistryTest", version))
         self.assertEqual(latest, "current")
+
+    def test_cross_branch_latest_is_ambiguous_but_explicit_version_selects(self):
+        alpha = self.installation("1")
+        alpha["branch"] = "Alpha"
+        alpha["solver"] = "BranchTest"
+        beta = self.installation("2506")
+        beta["branch"] = "Beta"
+        beta["solver"] = "BranchTest"
+        self.write_config([alpha, beta])
+
+        def environment(installation):
+            return {
+                "TEST_VERSION": installation["version"],
+                "TEST_BRANCH": installation["branch"],
+                "TEST_EXECUTABLE": str(Path(installation["path"]) / "bin" / RegistryAdapter.main_executable),
+            }
+
+        with patch.dict(registry.ADAPTERS, {"BranchTest": {"1": BranchAlpha, "2506": BranchBeta}}, clear=True), \
+                patch.object(registry, "load_env", side_effect=environment):
+            with self.assertRaises(ConfigurationError):
+                registry.select_install(self.root, "BranchTest@latest")
+            selected, _, info, adapter = registry.select_install(self.root, "BranchTest@2506")
+        self.assertEqual(selected["branch"], "Beta")
+        self.assertEqual(info.branch, "Beta")
+        self.assertIsInstance(adapter, BranchBeta)
 
     def test_environment_modes_remain_exclusive_and_existing_is_independent(self):
         for spec in (
