@@ -204,6 +204,12 @@ async function main() {
         assert.equal(await evaluate('document.getElementById("floating-collapse").textContent'), '全部展开');
         await evaluate('document.getElementById("floating-collapse").click()');
         assert.equal(await evaluate('document.querySelectorAll("[data-section].collapsed").length'), 0);
+        await evaluate('document.querySelector("#jobs .filter-toggle").click()');
+        assert.equal(await evaluate('document.querySelector("#jobs .panel-head").classList.contains("filter-open")'), true);
+        assert.equal(await evaluate('getComputedStyle(document.querySelector("#jobs .panel-head")).zIndex'), '80');
+        assert.equal(await evaluate('getComputedStyle(document.querySelector("#jobs .filter-panel")).zIndex'), '90');
+        await evaluate('document.querySelector("#jobs .filter-toggle").click()');
+        assert.equal(await evaluate('document.querySelector("#jobs .panel-head").classList.contains("filter-open")'), false);
         await click('select');
         await drag([0.3, 0.3], [0.7, 0.6]);
         const selected = await view();

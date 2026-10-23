@@ -407,3 +407,10 @@
 - 操作：更新 `README.md`，补充双分支、`OpenFOAM@12`/`OpenFOAM@2506` 选择器、跨分支 `latest` 歧义、v2506 `--path-prepend` 配置、`icoFoam`/`simpleFoam` 能力和验证边界。
 - 验证：v2506 串行与 MPI 均 `SUCCEEDED`，归档 22 个 VTU、`pvpython` 直读成功，报告均値 `0.5`、末步速度 x 最大误差 `2.33e-8`；Foundation 12 在网格去除 `cellZones` 后串行与 MPI 也均 `SUCCEEDED`；合并报告同时保留 Foundation 与 OpenCFD 两个分支的序列。未运行浏览器回归，未验证 OpenMP/CUDA 或其他内核。
 - 未解决：同版本多次历史归档会同时出现在合并报告中（按作业而非按执行配置去重），后续可再收敛；Ubuntu 20.04 上 v2506 已实测可运行，但非官方预编译目标。
+
+### 045｜2026-10-23｜修正报告筛选面板层叠顺序
+
+- 目的：筛选面板打开时保持在吸顶标题和重叠内容之上，避免输入框被其他报告区块遮挡。
+- 操作：修改 `report_assets/report.js`，在筛选面板打开/关闭时同步所属 `.panel-head` 的 `filter-open` 状态；修改 `report_assets/report.css`，提升打开筛选面板及其所属吸顶标题的层级；修改 `tests/report/check_html_report.cjs`，增加打开状态和计算层级断言。
+- 验证：`node --check report_assets/report.js`、`node --check tests/report/check_html_report.cjs` 通过；使用当前 CSS/JS 嵌入临时报告运行浏览器回归，新增筛选层级断言通过，随后仍在既有 `Box zoom did not change range` 断言失败；临时报告及目录已清理。
+- 未覆盖：未修复既有 Box zoom 交互失败；未运行完整 unittest 或求解器作业。

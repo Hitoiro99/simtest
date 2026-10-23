@@ -321,7 +321,15 @@
             toggle.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3 5h18l-7 8v6l-4 2v-8L3 5z"/></svg>';
             const panel = element('div', null, box, {class: 'filter-panel'});
             panel.hidden = true;
-            toggle.onclick = () => { panel.hidden = !panel.hidden; };
+            toggle.onclick = () => {
+                panel.hidden = !panel.hidden;
+                const open = !panel.hidden;
+                box.classList.toggle('is-open', open);
+                const panelHead = box.closest('.panel-head');
+                if (panelHead) {
+                    panelHead.classList.toggle('filter-open', open);
+                }
+            };
             const head = element('div', null, panel, {class: 'filter-head'});
             element('strong', '设置筛选条件', head);
             const modeBox = element('div', null, head, {class: 'filter-mode'});
