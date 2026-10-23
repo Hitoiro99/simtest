@@ -176,9 +176,7 @@ def prepare_job(root, case_id, condition_id, selector, options, execution=None):
         if value is not None:
             execution[name] = value
     execution = execution_config(execution)
-    installation, environment, info, adapter = select_install(
-        root, selector, getattr(options, "config", None), case_path=path
-    )
+    installation, environment, info, adapter = select_install(root, selector, getattr(options, "config", None))
     code_hashes = code_inventory()
     system = hardware_info(execution, info, environment)
     executables = {}

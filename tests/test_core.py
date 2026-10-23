@@ -106,18 +106,6 @@ class CoreTests(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ConfigurationError):
                 execution_configs(value)
 
-    def test_case_application_uses_template_control_dict(self):
-        with tempfile.TemporaryDirectory() as temp:
-            path = Path(temp) / "case1"
-            system = path / "templates" / "OpenFOAM" / "system"
-            system.mkdir(parents=True)
-            (path / "templates" / "OpenFOAM" / "template.yaml").write_text(
-                'id: t\nsolver: OpenFOAM\ncompatibility: "12"\n', encoding="utf-8"
-            )
-            (system / "controlDict").write_text("application simpleFoam;\n", encoding="utf-8")
-            adapter = V12()
-            self.assertEqual(adapter.case_application(SimpleNamespace(case_path=path)), "simpleFoam")
-
     def test_multiple_parameters_not_limited_to_example(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "case1"

@@ -28,10 +28,7 @@ class V12(OpenFOAMAdapter):
 
     def probe(self, context):
         env = context.environment
-        application = self.case_application(context)
-        if application not in self.supported_applications:
-            raise UnsupportedCaseError("不支持的求解器主程序: " + application)
-        tools = {application: find_tool(application, env)}
+        tools = {self.main_executable: find_tool(self.main_executable, env)}
         for name in (
             "foamDictionary",
             "checkMesh",
@@ -42,7 +39,7 @@ class V12(OpenFOAMAdapter):
             "pvpython",
         ):
             tools[name] = find_tool(name, env)
-        help_text = run_capture([tools[application], "-help"], env)
+        help_text = run_capture([tools[self.main_executable], "-help"], env)
         match = re.search(r"^Using:\s*OpenFOAM-([0-9]+)\s*\(see https?://openfoam.org\)", help_text, re.M)
         if not match:
             raise UnsupportedCaseError("无法从求解器可执行文件确认 Foundation 版本")
@@ -57,6 +54,4 @@ class V12(OpenFOAMAdapter):
             capabilities = sorted(self.capabilities)
         else:
             capabilities = sorted(self.capabilities - {"mpi"})
-        return SolverInfo(
-            self.name, version, build.group(1), self.branch, capabilities, tools, application=application
-        )
+        return SolverInfo(self.name, version, build.group(1), self.branch, capabilities, tools)

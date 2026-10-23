@@ -351,3 +351,10 @@
 - 操作：`solvers/registry.py` 新增 `_branch`、`_classes`、`_branch_for_version`；`select` 与 `version_key` 支持分支内排序，跨分支需显式分支，否则报歧义；`compatibility` 只匹配同一分支的变更点；`register_install`/`select_install` 记录并使用安装的 `branch`，旧配置缺 branch 时按已注册版本推断，跨分支 `latest` 报错。`tests/test_registry.py` 新增跨分支 `latest` 歧义与显式版本选择测试。
 - 验证：完整 87 项 unittest 通过；`validate couette-2d` 通过。未重新运行求解器与浏览器回归。
 - 未解决：`probe` 仍读取案例模板；v2506 Adapter/模板/环境尚未接入；报告“最新版本”分组尚未按分支隔离。
+
+### 037｜2026-10-23｜解耦安装探测与案例选择
+
+- 基线：86 项 unittest 通过；注册器已支持分支，但探测仍读取案例模板。
+- 操作：删除 `OpenFOAMAdapter.case_application()`；`v12.probe()` 只用 `main_executable` 探测版本并登记基础工具，不再接收 `case_path`；`select_install()` 去掉 `case_path`；`jobs.py`、`simtest.py` 调用点同步；案例 `application` 改由 `preprocess()` 在模板渲染后校验并登记；删除对应测试。
+- 验证：完整 86 项 unittest 通过；`validate couette-2d` 通过；`run --prepare-only` 真实执行成功，两个作业进入 `QUEUED`，随后清理。
+- 未解决：v2506 Adapter/模板/环境尚未接入；报告“最新版本”分组尚未按分支隔离。

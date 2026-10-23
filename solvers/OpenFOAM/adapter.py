@@ -41,25 +41,6 @@ class OpenFOAMAdapter(SolverAdapter):
     environment_keys = ("WM_PROJECT_VERSION", "WM_PROJECT_DIR", "WM_OPTIONS", "OMP_NUM_THREADS")
     capabilities = frozenset({"transient", "steady", "incompressible", "laminar", "mpi", "serial"})
 
-    def case_application(self, context):
-        """按案例模板 controlDict 的 application 选择求解器主程序。"""
-        case_path = getattr(context, "case_path", None)
-        if case_path is None:
-            return self.main_executable
-        from case_management.templates import choose
-
-        chain = choose(Path(case_path), self)
-        for entry in reversed(chain):
-            file = Path(entry["_path"]) / "system" / "controlDict"
-            if not file.is_file():
-                continue
-            text = file.read_text(encoding="utf-8", errors="replace")
-            match = re.search(r"(?m)^\s*application\s+([A-Za-z][A-Za-z0-9_]*)\s*;", text)
-            if not match:
-                raise ConfigurationError("模板 controlDict 缺少可解析的 application")
-            return match.group(1)
-        raise ConfigurationError("模板缺少 system/controlDict")
-
     def validate(self, context):
         from solvers.registry import mapped
 
