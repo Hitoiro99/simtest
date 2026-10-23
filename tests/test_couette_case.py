@@ -7,7 +7,7 @@ import unittest
 from case_management.cases import execution_configs, load_case, load_condition
 from case_management.templates import materialize
 from platform_support.expression import evaluate
-from solvers.OpenFOAM.adapter import OpenFOAMAdapter
+from solvers.OpenFOAM.versions.v12 import V12
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,7 +60,7 @@ class CouetteCaseTests(unittest.TestCase):
         self.assertEqual(reference["expression"]["z"], "0")
 
     def test_openfoam_template_has_couette_boundaries_and_iteration_controls(self):
-        adapter = OpenFOAMAdapter()
+        adapter = V12()
         with tempfile.TemporaryDirectory() as temp:
             input_path = Path(temp) / "input"
             context = SimpleNamespace(

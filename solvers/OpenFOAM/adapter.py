@@ -26,25 +26,20 @@ from solvers.exceptions import (
     UnsupportedCaseError,
     UnsupportedResultFormatError,
 )
-from solvers.models import Command, MonitorRecord, SolverInfo, StageResult
-from solvers.registry import mapped, register_adapter
+from solvers.models import Command, MonitorRecord, StageResult
+from solvers.registry import mapped
 
 
-@register_adapter
 class OpenFOAMAdapter(SolverAdapter):
+    """OpenFOAM 内核公共行为；具体版本与分支由 versions/ 子类提供。"""
+
     name = "OpenFOAM"
-    version = "12"
+    branch = ""
     main_executable = "icoFoam"
+    post_process_tool = "foamPostProcess"
     supported_applications = ("icoFoam", "simpleFoam")
-    version_rule = "Foundation integer release; same branch only"
     environment_keys = ("WM_PROJECT_VERSION", "WM_PROJECT_DIR", "WM_OPTIONS", "OMP_NUM_THREADS")
     capabilities = frozenset({"transient", "steady", "incompressible", "laminar", "mpi", "serial"})
-
-    @staticmethod
-    def version_key(version):
-        if not re.fullmatch(r"[1-9][0-9]*", str(version)):
-            raise UnsupportedCaseError("首期 Foundation 版本序列只接受整数版本；不能与 OpenCFD vYYMM 混排")
-        return int(version)
 
     def case_application(self, context):
         """按案例模板 controlDict 的 application 选择求解器主程序。"""
@@ -65,41 +60,6 @@ class OpenFOAMAdapter(SolverAdapter):
             return match.group(1)
         raise ConfigurationError("模板缺少 system/controlDict")
 
-    def probe(self, context):
-        env = context.environment
-        application = self.case_application(context)
-        if application not in self.supported_applications:
-            raise UnsupportedCaseError("不支持的求解器主程序: " + application)
-        tools = {application: find_tool(application, env)}
-        for name in (
-            "foamDictionary",
-            "checkMesh",
-            "decomposePar",
-            "reconstructPar",
-            "foamToVTK",
-            "foamPostProcess",
-            "pvpython",
-        ):
-            tools[name] = find_tool(name, env)
-        help_text = run_capture([tools[application], "-help"], env)
-        match = re.search(r"^Using:\s*OpenFOAM-([0-9]+)\s*\(see https?://openfoam.org\)", help_text, re.M)
-        if not match:
-            raise UnsupportedCaseError("无法从求解器可执行文件确认 Foundation 版本")
-        version = match.group(1)
-        build = re.search(r"^Build:\s*(\S+)", help_text, re.M)
-        if not build:
-            raise ConfigurationError("求解器未提供构建标识")
-        mpi = shutil.which("mpirun", path=env.get("PATH"))
-        if mpi:
-            tools["mpirun"] = str(Path(mpi).resolve())
-        if mpi:
-            capabilities = sorted(self.capabilities)
-        else:
-            capabilities = sorted(self.capabilities - {"mpi"})
-        return SolverInfo(
-            self.name, version, build.group(1), "Foundation", capabilities, tools, application=application
-        )
-
     def validate(self, context):
         from solvers.registry import mapped
 
@@ -107,7 +67,7 @@ class OpenFOAMAdapter(SolverAdapter):
             for name, declaration in getattr(context, "case", {}).get(section, {}).items():
                 mapped(declaration, name, self)
         if context.execution["backend"] != "serial":
-            raise UnsupportedCaseError("当前 Foundation/icoFoam Adapter 不支持请求的 OpenMP/CUDA 后端")
+            raise UnsupportedCaseError("当前 OpenFOAM Adapter 不支持请求的 OpenMP/CUDA 后端")
         if context.execution["processes"] > 1 and "mpi" not in context.info.capabilities:
             raise UnsupportedCaseError("MPI 请求无法满足")
         if context.execution["processes"] > (os.cpu_count() or 1):
@@ -181,7 +141,7 @@ class OpenFOAMAdapter(SolverAdapter):
         if any("#codeStream" in p.read_text(encoding="utf-8") for p in (context.input / "0").glob("*") if p.is_file()):
             self.native(
                 context,
-                "foamPostProcess",
+                self.post_process_tool,
                 ["-func", "writeObjects(U)", "-fields", "(U)", "-time", "0"],
                 "initialize",
                 context.input,

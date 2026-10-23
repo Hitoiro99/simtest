@@ -25,7 +25,7 @@ from solvers.exceptions import (
     UnsupportedCaseError,
 )
 from solvers.models import Command, RunContext, SolverInfo
-from solvers.OpenFOAM.adapter import OpenFOAMAdapter
+from solvers.OpenFOAM.versions.v12 import V12
 from solvers.registry import ADAPTERS, compatibility, discover, mapped, register_adapter, select
 
 
@@ -115,7 +115,7 @@ class CoreTests(unittest.TestCase):
                 'id: t\nsolver: OpenFOAM\ncompatibility: "12"\n', encoding="utf-8"
             )
             (system / "controlDict").write_text("application simpleFoam;\n", encoding="utf-8")
-            adapter = OpenFOAMAdapter()
+            adapter = V12()
             self.assertEqual(adapter.case_application(SimpleNamespace(case_path=path)), "simpleFoam")
 
     def test_multiple_parameters_not_limited_to_example(self):
@@ -175,7 +175,7 @@ class CoreTests(unittest.TestCase):
             )
 
     def test_template_undefined_and_integer_filter(self):
-        adapter = OpenFOAMAdapter()
+        adapter = V12()
         for value in (1.2, True, float("nan")):
             with self.assertRaises(ConfigurationError):
                 adapter.format_integer(value)
@@ -220,7 +220,7 @@ class CoreTests(unittest.TestCase):
             mesh.mkdir()
             self.assertEqual(load_case(root)["id"], "sample")
             self.assertEqual(mesh_asset(root), mesh)
-            adapter = OpenFOAMAdapter()
+            adapter = V12()
             context = SimpleNamespace(
                 case_path=root,
                 case={},
@@ -264,7 +264,7 @@ class CoreTests(unittest.TestCase):
                 self.assertEqual(set(context.manifest["rendered_sha256"]), set(names))
 
     def test_openfoam_template_layout_can_be_overridden_by_version(self):
-        class ChangedLayout(OpenFOAMAdapter):
+        class ChangedLayout(V12):
             def validate_template(self, path):
                 if path.parts[0] != "extra":
                     super().validate_template(path)
@@ -275,7 +275,7 @@ class CoreTests(unittest.TestCase):
             (template / "extra").mkdir(parents=True)
             (template / "template.yaml").write_text('id: native\nsolver: OpenFOAM\ncompatibility: "12"\n')
             (template / "extra" / "settings").write_text("{{ amplitude | real }}")
-            adapter = OpenFOAMAdapter()
+            adapter = V12()
             context = self.template_context(root, adapter)
             with self.assertRaisesRegex(ConfigurationError, "0/constant/system"):
                 materialize(context, adapter)
@@ -284,7 +284,7 @@ class CoreTests(unittest.TestCase):
             self.assertEqual((context.input / "extra" / "settings").read_text(), "3.0")
 
     def test_template_inheritance_renders_only_final_files(self):
-        adapter = OpenFOAMAdapter()
+        adapter = V12()
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             parent = root / "templates" / "parent"
@@ -356,7 +356,7 @@ class CoreTests(unittest.TestCase):
                 case={"monitors": {"a": {"type": "real"}, "b": {"type": "real"}}},
                 manifest={},
             )
-            adapter = OpenFOAMAdapter()
+            adapter = V12()
             adapter.dictionary = lambda *args, **kwargs: "0"
             records, warnings = adapter.read_monitors(context)
             self.assertEqual(records["b"][-1].step, 2)
@@ -406,7 +406,7 @@ class CoreTests(unittest.TestCase):
             path = Path(temp) / "postProcessing" / "m"
             path.mkdir(parents=True)
             (path / "m.dat").write_text("# Time a\n0 1\n1 broken\n")
-            tables, warnings = OpenFOAMAdapter().read_tables(Path(temp))
+            tables, warnings = V12().read_tables(Path(temp))
             self.assertTrue(math.isnan(tables["a"][1]))
             self.assertTrue(warnings)
 

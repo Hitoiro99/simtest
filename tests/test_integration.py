@@ -11,7 +11,7 @@ from archive import archive, verify_archive
 from solvers.registry import load_env
 from platform_support.io import atomic_json, inventory
 from solvers.exceptions import PostprocessError, SolverCrashError
-from solvers.OpenFOAM.adapter import OpenFOAMAdapter
+from solvers.OpenFOAM.versions.v12 import V12
 from solvers.base import supervise as real_supervise
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,7 +26,7 @@ class IntegrationTests(unittest.TestCase):
             shutil.copytree(ROOT / "tests" / "fixtures" / "openfoam12", work)
             (root / "logs").mkdir()
             environment = load_env({"environment": {"kind": "script", "script": "/opt/openfoam12/etc/bashrc"}})
-            adapter = OpenFOAMAdapter()
+            adapter = V12()
             info = adapter.probe(SimpleNamespace(environment=environment))
             reference = {"field": "velocity", "domain": "internalMesh", "expression": {"x": "0", "y": "0", "z": "0"}}
             context = SimpleNamespace(

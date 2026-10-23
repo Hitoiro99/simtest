@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from types import SimpleNamespace
 
-from solvers.OpenFOAM.adapter import OpenFOAMAdapter
+from solvers.OpenFOAM.versions.v12 import V12
 from solvers.exceptions import FieldParseError
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -105,7 +105,7 @@ class AdapterReaderOverrides(unittest.TestCase):
     def test_monitor_reader_uses_version_log_and_table_methods(self):
         calls = []
 
-        class VersionAdapter(OpenFOAMAdapter):
+        class VersionAdapter(V12):
             def read_log(self, path):
                 calls.append("log")
                 return [1.0], {"residual:Ux": {(1, 1.0): 0.125}}, []
@@ -136,7 +136,7 @@ class AdapterReaderOverrides(unittest.TestCase):
                              ["step,time,residual:Ux,flow", "1,1.0,0.125,2.5"])
 
     def test_field_reader_uses_version_output_time_method(self):
-        class VersionAdapter(OpenFOAMAdapter):
+        class VersionAdapter(V12):
             def output_times(self, context):
                 raise FieldParseError("version-specific time metadata")
 
@@ -149,7 +149,7 @@ class AdapterReaderOverrides(unittest.TestCase):
         warning = {"kind": "invalid", "monitor": "flow"}
         datasets = [{"field": "velocity"}]
 
-        class VersionAdapter(OpenFOAMAdapter):
+        class VersionAdapter(V12):
             def native(self, context, tool, args, label, case_path=None):
                 calls.append(tool)
 

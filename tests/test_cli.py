@@ -11,7 +11,7 @@ from unittest.mock import patch
 import yaml
 
 from simtest import main
-from solvers.OpenFOAM.adapter import OpenFOAMAdapter
+from solvers.OpenFOAM.versions.v12 import V12
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,7 +36,7 @@ class CliTests(unittest.TestCase):
 
     def validate(self):
         info = SimpleNamespace(version="12", capabilities=["serial", "mpi"])
-        adapter = OpenFOAMAdapter()
+        adapter = V12()
         with patch("simtest.select_install", return_value=({}, {}, info, adapter)):
             return self.invoke("validate", CASE_ID)
 
