@@ -208,6 +208,14 @@ class RegistryTests(unittest.TestCase):
         self.assertEqual(info.branch, "Beta")
         self.assertIsInstance(adapter, BranchBeta)
 
+    def test_path_prepend_is_applied_to_activated_environment(self):
+        environment = registry.load_env(
+            {"environment": {"kind": "existing"}, "path_prepend": ["/opt/paraview"]}
+        )
+        self.assertTrue(environment["PATH"].startswith("/opt/paraview" + os.pathsep))
+        with self.assertRaises(ConfigurationError):
+            registry.load_env({"environment": {"kind": "existing"}, "path_prepend": "bad"})
+
     def test_environment_modes_remain_exclusive_and_existing_is_independent(self):
         for spec in (
             {"kind": "existing", "script": "not-used"},

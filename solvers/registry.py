@@ -174,14 +174,27 @@ def load_env(installation):
     if kind == "existing":
         if "modules" in spec or "script" in spec:
             raise ConfigurationError("existing 不允许模块或脚本参数")
-        return base
-    if kind == "script":
+        environment = base
+    elif kind == "script":
         if "modules" in spec:
             raise ConfigurationError("script 不允许 modules")
         script = spec.get("script")
         if not isinstance(script, str) or not Path(script).is_file():
             raise ConfigurationError("环境脚本不存在")
         argv = ["bash", "-c", "source " + shlex.quote(script) + " >/dev/null || exit $?; env -0"]
+        with tempfile.TemporaryFile() as captured:
+            result = subprocess.run(
+                argv, stdout=captured, stderr=subprocess.PIPE, env=base, timeout=30
+            )
+            captured.seek(0)
+            stdout = captured.read()
+        if result.returncode:
+            raise PreprocessError("环境加载失败: " + result.stderr.decode("utf-8", "replace")[-2000:])
+        environment = {}
+        for pair in stdout.split(b"\0"):
+            if b"=" in pair:
+                key, value = pair.split(b"=", 1)
+                environment[key.decode("utf-8", "replace")] = value.decode("utf-8", "replace")
     elif kind == "module":
         if "script" in spec:
             raise ConfigurationError("module 不允许 script")
@@ -193,22 +206,28 @@ def load_env(installation):
         ):
             raise ConfigurationError("非法模块参数")
         argv = ["bash", "-lc", 'module load "$@" >/dev/null || exit $?; env -0', "simtest"] + modules
+        with tempfile.TemporaryFile() as captured:
+            result = subprocess.run(
+                argv, stdout=captured, stderr=subprocess.PIPE, env=base, timeout=30
+            )
+            captured.seek(0)
+            stdout = captured.read()
+        if result.returncode:
+            raise PreprocessError("环境加载失败: " + result.stderr.decode("utf-8", "replace")[-2000:])
+        environment = {}
+        for pair in stdout.split(b"\0"):
+            if b"=" in pair:
+                key, value = pair.split(b"=", 1)
+                environment[key.decode("utf-8", "replace")] = value.decode("utf-8", "replace")
     else:
         raise ConfigurationError("未知 environment.kind")
-    with tempfile.TemporaryFile() as captured:
-        result = subprocess.run(
-            argv, stdout=captured, stderr=subprocess.PIPE, env=base, timeout=30
-        )
-        captured.seek(0)
-        stdout = captured.read()
-    if result.returncode:
-        raise PreprocessError("环境加载失败: " + result.stderr.decode("utf-8", "replace")[-2000:])
-    environment = {}
-    for pair in stdout.split(b"\0"):
-        if b"=" in pair:
-            key, value = pair.split(b"=", 1)
-            environment[key.decode("utf-8", "replace")] = value.decode("utf-8", "replace")
     environment["OMP_NUM_THREADS"] = "1"
+    prepend = installation.get("path_prepend", [])
+    if not isinstance(prepend, list) or not all(isinstance(item, str) and item for item in prepend):
+        raise ConfigurationError("path_prepend 必须为非空字符串列表")
+    if prepend:
+        existing = environment.get("PATH", "")
+        environment["PATH"] = os.pathsep.join(prepend + ([existing] if existing else []))
     return environment
 
 
@@ -227,6 +246,9 @@ def register_install(root, args):
     if args.environment_module:
         environment["modules"] = args.environment_module
     installation = {"solver": args.solver, "version": args.version, "path": str(path), "environment": environment}
+    prepend = getattr(args, "path_prepend", None)
+    if prepend:
+        installation["path_prepend"] = list(prepend)
     activated = load_env(installation)
     candidates = [cls for cls in ADAPTERS[args.solver].values() if cls.version == str(args.version)]
     if not candidates:

@@ -42,6 +42,7 @@ def parser():
     deploy.add_argument("--environment",choices=["existing", "module", "script"],default="existing", )
     deploy.add_argument("--environment-script")
     deploy.add_argument("--environment-module", action="append", default=[])
+    deploy.add_argument("--path-prepend", action="append", default=[])
     deploy.add_argument("--force", action="store_true")
 
     listing = commands.add_parser("list")

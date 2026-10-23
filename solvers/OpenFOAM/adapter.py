@@ -105,7 +105,9 @@ class OpenFOAMAdapter(SolverAdapter):
             argv += ["-value"]
         else:
             argv += []
-        return run_capture(argv, context.environment, cwd=path.parent)
+        environment = dict(context.environment)
+        environment["PWD"] = str(path.parent)
+        return run_capture(argv, environment, cwd=path.parent)
 
     def preprocess(self, context):
         self.validate(context)

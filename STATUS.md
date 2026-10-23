@@ -379,3 +379,10 @@
 - 操作：修改 `cases/couette-2d/mesh-preparation/create_example_mesh.py`，blockMesh 后删除 `cellZones`（v2506 不生成且不需要），从 `checkMesh.log` 解析总单元数和包围盒，manifest 改为 `cells: 1920`、`geometry_m: {min,max,size}`；重新生成 `polyMesh`（5 个必需文件）和 `mesh-provenance`；修改 `tests/test_mesh.py` 的假 checkMesh 日志。
 - 验证：provenance 现记录 `cells=1920`、包围盒 `0.1×0.01×0.001`；Foundation `checkMesh` 仍通过；v2506 后续 `checkMesh` 与求解可正常读取网格。
 - 未解决：v2506 尚未正式提交配置/全链路结果；报告跨分支分组待改。
+
+### 041｜2026-10-23｜加载 v2506 环境并组合 ParaView 路径
+
+- 基线：v2506 bashrc 不包含 `pvpython`；`load_env` 通过管道获取 `env -0` 时被后台子进程拖住超时，且 v2506 bashrc 对 `source "$1"` 处理异常。
+- 操作：`solvers/registry.py` 的 `load_env` 把 `env -0` 写入临时文件、用 `shlex.quote(script)` 直接内联脚本路径，并新增 `path_prepend`；`simtest.py setup` 新增 `--path-prepend`；`solvers/OpenFOAM/adapter.py` 的 `dictionary()` 把 `PWD` 设为字典目录，消除 v2506 PWD 警告污染 stdout；`tests/test_registry.py` 增加 `path_prepend` 测试。
+- 验证：90 项 unittest 通过；真实 v2506 `setup` 成功登记 `branch: OpenCFD` 与 `path_prepend: /opt/paraviewopenfoam510/bin`；`validate couette-2d --solver OpenFOAM@2506` 通过；v2506 串行/MPI 后续真实运行成功。
+- 未解决：v2506 ESI 字典和报告跨分支分组尚未提交。
