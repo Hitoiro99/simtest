@@ -232,8 +232,10 @@ def execution_label(execution):
 
 def label(manifest):
     info = manifest["actual_solver"]
+    branch = info.get("branch", "")
+    solver = info["name"] + (" (" + branch + ")" if branch else "")
     return "%s / %s / %s / %s · %s" % (
-        info["name"],
+        solver,
         info["version"],
         condition_name(manifest),
         execution_label(manifest["execution"]),
@@ -286,14 +288,18 @@ def build_charts(runs):
     runs = [(path, manifest, status) for path, manifest, status in runs if status["status"] == "SUCCEEDED"]
     latest = {}
     for path, m, status in runs:
-        key = (m["identity"]["condition"], m["actual_solver"]["name"])
-        candidate = version_key(m["actual_solver"]["name"], m["actual_solver"]["version"])
+        info = m["actual_solver"]
+        branch = info.get("branch", "")
+        key = (m["identity"]["condition"], info["name"], branch)
+        candidate = version_key(info["name"], info["version"], branch or None)
         if key not in latest or candidate > latest[key]:
             latest[key] = candidate
     for path, m, status in runs:
+        info = m["actual_solver"]
         condition = m["identity"]["condition"]
-        candidate = version_key(m["actual_solver"]["name"], m["actual_solver"]["version"])
-        if candidate != latest[(condition, m["actual_solver"]["name"])]:
+        branch = info.get("branch", "")
+        candidate = version_key(info["name"], info["version"], branch or None)
+        if candidate != latest[(condition, info["name"], branch)]:
             continue
         for name, records in m.get("monitors", {}).items():
             declaration = m["case"]["monitors"].get(name, {})

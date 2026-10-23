@@ -81,7 +81,7 @@ class ReportTests(unittest.TestCase):
             manifest["condition"] = {"references": {"exp": {"kind": "experimental", "monitor": "u"}}}
             runs.append((Path("archive"), manifest, {"status": "SUCCEEDED"}))
 
-        def fluent_version(name, version):
+        def fluent_version(name, version, branch=None):
             self.assertEqual(name, "Fluent")
             year, release = version.split("R")
             return int(year), int(release)
@@ -91,6 +91,22 @@ class ReportTests(unittest.TestCase):
         self.assertTrue(comparator.called)
         self.assertEqual(len(charts), 1)
         self.assertEqual([series["job_id"] for series in charts[0]["series"]], ["job-2026R1"])
+
+    def test_latest_is_selected_per_branch(self):
+        runs = []
+        for branch, version in (("Foundation", "12"), ("OpenCFD", "2506")):
+            m = fixture()
+            m["job_id"] = "job-" + version
+            m["actual_solver"] = {"name": "OpenFOAM", "version": version, "branch": branch}
+            m["case"]["monitors"] = {"residual_p": {"unit": "1"}}
+            m["monitors"] = {"residual_p": [{"step": 1, "time": 0.1, "value": 1e-3}]}
+            runs.append((Path("archive"), m, {"status": "SUCCEEDED"}))
+        charts = build_charts(runs)
+        self.assertEqual(len(charts), 1)
+        self.assertEqual(len(charts[0]["series"]), 2)
+        labels = [series["label"] for series in charts[0]["series"]]
+        self.assertTrue(any("Foundation" in label for label in labels))
+        self.assertTrue(any("OpenCFD" in label for label in labels))
 
     def test_field_comparisons_are_grouped_without_bridging_unavailable(self):
         m = fixture()

@@ -393,3 +393,10 @@
 - 操作：在 `cases/couette-2d/templates/OpenFOAM-2506/constant/` 新增 `transportProperties`（`transportModel Newtonian`、`nu`）和 `turbulenceProperties`（`simulationType laminar`），继承 Foundation 其余文件；`tests/test_couette_case.py` 增加 ESI 字典断言。
 - 验证：90 项 unittest 通过；v2506 串行与 2 进程 MPI 均 `SUCCEEDED`，归档包含 11 个时刻×2 个场共 22 个 VTU，`pvpython` 直读成功；报告均值 `0.5`、末步速度 x 最大误差 `2.33e-8`。
 - 未解决：报告仍按旧方式选择“最新版本”，跨分支会被合并。
+
+### 043｜2026-10-23｜报告按分支选择最新版本
+
+- 基线：`build_charts` 以 `(工况, 求解器)` 选择最新版本，Foundation 12 和 OpenCFD 2506 共用 `OpenFOAM` 名称时会把一个分支挤掉。
+- 操作：修改 `report.py`，最新版本分组改为 `(工况, 求解器, 分支)`，`version_key` 传入分支；图例 `label()` 在求解器后追加分支名；`tests/test_report.py` 新增两个分支同时保留的测试。
+- 验证：90 项 unittest 通过；待用双分支归档重新生成报告确认两个分支同时出现。
+- 未解决：Foundation 12 在网格改动后的回归、README 更新尚未完成。
