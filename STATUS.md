@@ -372,3 +372,10 @@
 - 操作：新增 `cases/couette-2d/templates/OpenFOAM-2506/template.yaml`，`compatibility: "2506"` 并继承 `openfoam-foundation-12`；`tests/test_couette_case.py` 增加 v2506 模板选择、继承链和渲染结果断言。
 - 验证：完整 88 项 unittest 通过；`choose()` 对 V2506 选中 `openfoam-opencfd-2506`，继承 Foundation 文件并渲染 `simpleFoam`。未运行 v2506 求解。
 - 未解决：v2506 未登记到本机 `config.yaml`，未验证真实串行/MPI、直读/回退和报告。
+
+### 040｜2026-10-23｜修正网格制备：去除 cellZones 与真实 provenance
+
+- 基线：v2506 `checkMesh` 读取 Foundation 12 生成的空 `cellZones` 时报 `unexpected class name`；provenance 仍写死旧几何/网格数。
+- 操作：修改 `cases/couette-2d/mesh-preparation/create_example_mesh.py`，blockMesh 后删除 `cellZones`（v2506 不生成且不需要），从 `checkMesh.log` 解析总单元数和包围盒，manifest 改为 `cells: 1920`、`geometry_m: {min,max,size}`；重新生成 `polyMesh`（5 个必需文件）和 `mesh-provenance`；修改 `tests/test_mesh.py` 的假 checkMesh 日志。
+- 验证：provenance 现记录 `cells=1920`、包围盒 `0.1×0.01×0.001`；Foundation `checkMesh` 仍通过；v2506 后续 `checkMesh` 与求解可正常读取网格。
+- 未解决：v2506 尚未正式提交配置/全链路结果；报告跨分支分组待改。

@@ -1,6 +1,7 @@
 """Explicit one-time mesh preparation. Never called implicitly by a test run."""
 
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -32,11 +33,21 @@ def main():
     env = load_env({"environment": {"kind": "script", "script": "/opt/openfoam12/etc/bashrc"}})
     records = []
     for name in ("blockMesh", "checkMesh"):
+        if name == "checkMesh":
+            zones = build / "constant" / "polyMesh" / "cellZones"
+            if zones.exists():
+                zones.unlink()
         result = supervise(Command([find_tool(name, env), "-case", str(build)], build, env), build / (name + ".log"))
         records.append(result.diagnostics)
     log = (build / "checkMesh.log").read_text(encoding="utf-8")
     if "Mesh OK" not in log:
         raise SystemExit("checkMesh 未确认 Mesh OK")
+    cells = re.search(r"(?m)^\s*cells:\s*(\d+)", log)
+    box = re.search(r"Overall domain bounding box \(([^)]+)\) \(([^)]+)\)", log)
+    if not cells or not box:
+        raise SystemExit("无法从 checkMesh 读取网格数或包围盒")
+    minimum = [float(value) for value in box.group(1).split()]
+    maximum = [float(value) for value in box.group(2).split()]
     shutil.copytree(build / "constant" / "polyMesh", case / "polyMesh")
     provenance = case / "mesh-provenance"
     provenance.mkdir()
@@ -48,8 +59,8 @@ def main():
             "case": "couette-2d",
             "commands": records,
             "definition_sha256": sha256(definition),
-            "geometry_m": {"length": 1.0, "gap": 1.0, "depth": 0.01},
-            "cells": {"x": 16, "y": 32, "z": 1},
+            "geometry_m": {"min": minimum, "max": maximum, "size": [high - low for low, high in zip(minimum, maximum)]},
+            "cells": int(cells.group(1)),
             "mesh_sha256": inventory(case / "polyMesh"),
             "generator": "OpenFOAM Foundation 12 blockMesh",
         },

@@ -32,7 +32,11 @@ class MeshPreparationTests(unittest.TestCase):
     def prepare(self, module, root, mesh_ok=True):
         def fake_supervise(command, log):
             log.parent.mkdir(parents=True, exist_ok=True)
-            log.write_text("Mesh OK\n" if mesh_ok else "Mesh FAILED\n", encoding="utf-8")
+            log.write_text(
+                "Mesh OK\n    cells:            8\n    Overall domain bounding box (0 0 0) (1 1 1)\n"
+                if mesh_ok else "Mesh FAILED\n",
+                encoding="utf-8",
+            )
             poly = log.parent / "constant" / "polyMesh"
             poly.mkdir(parents=True, exist_ok=True)
             (poly / "points").write_text("points", encoding="utf-8")

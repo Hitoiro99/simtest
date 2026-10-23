@@ -7,10 +7,10 @@
 \*---------------------------------------------------------------------------*/
 Build  : 12-86e126a7bc4d
 Exec   : /opt/openfoam12/platforms/linux64GccDPInt32Opt/bin/checkMesh -case /mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh
-Date   : Oct 22 2026
-Time   : 11:34:44
+Date   : Oct 23 2026
+Time   : 12:02:02
 Host   : "DESKTOP-BJ8PH1Q"
-PID    : 1657
+PID    : 883
 I/O    : uncollated
 Case   : /mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh
 nProcs : 1
@@ -39,7 +39,7 @@ Mesh stats
     boundary patches: 8
     point zones:      0
     face zones:       0
-    cell zones:       1
+    cell zones:       0
 
 Overall number of cells of each type:
     hexahedra:     1920

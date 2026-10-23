@@ -9,11 +9,11 @@
       ],
       "cwd": "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh",
       "exit_code": 0,
-      "start": "2026-10-22T03:34:44.831816+00:00",
-      "end": "2026-10-22T03:34:44.970695+00:00",
-      "wall_seconds": 0.13890332599999056,
-      "cpu_seconds": 0.052638000000000004,
-      "peak_memory_bytes": 46895104,
+      "start": "2026-10-23T04:02:01.878523+00:00",
+      "end": "2026-10-23T04:02:02.121992+00:00",
+      "wall_seconds": 0.24349070200003098,
+      "cpu_seconds": 0.062975,
+      "peak_memory_bytes": 46989312,
       "memory_method": "sampled process-group RSS + wait4 ru_maxrss",
       "log": "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh/blockMesh.log"
     },
@@ -25,29 +25,36 @@
       ],
       "cwd": "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh",
       "exit_code": 0,
-      "start": "2026-10-22T03:34:44.970902+00:00",
-      "end": "2026-10-22T03:34:45.260651+00:00",
-      "wall_seconds": 0.2897723069999927,
-      "cpu_seconds": 0.064029,
-      "peak_memory_bytes": 45547520,
+      "start": "2026-10-23T04:02:02.125444+00:00",
+      "end": "2026-10-23T04:02:02.417714+00:00",
+      "wall_seconds": 0.29228820299999825,
+      "cpu_seconds": 0.067962,
+      "peak_memory_bytes": 45273088,
       "memory_method": "sampled process-group RSS + wait4 ru_maxrss",
       "log": "/mnt/c/Users/Administrator/PycharmProjects/repository/.build/mesh/checkMesh.log"
     }
   ],
-  "definition_sha256": "950b5c012746cb2a1dce6a33bf8c5146ee77b6898f3a9041f92a9e5c42502c14",
+  "definition_sha256": "eb86c8ca625ed78920b2eb6af9a5c306a156441c3ff661384849b8ea101e5bd6",
   "geometry_m": {
-    "length": 1.0,
-    "gap": 1.0,
-    "depth": 0.01
+    "min": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "max": [
+      0.1,
+      0.01,
+      0.001
+    ],
+    "size": [
+      0.1,
+      0.01,
+      0.001
+    ]
   },
-  "cells": {
-    "x": 16,
-    "y": 32,
-    "z": 1
-  },
+  "cells": 1920,
   "mesh_sha256": {
     "boundary": "73f07d719f4151764dc6f6ef460685c46a3f374f4178cec31ab745400b25ee0b",
-    "cellZones": "c5a85e76216dcb517a979d50a25c05dfbf3622712b68df970a5b6bd5a9838e82",
     "faces": "f691d74a93e59a458fb83b8ecbbeafcdbeabcd564740ab1d3589b024d4aae2e7",
     "neighbour": "8783b9b93b5effb5897f89434be0a0d5eca6961203bcd9d931f46e2a497c0da5",
     "owner": "4bef24e30b6d401deb9b36995397460ae38b9ab48ad7d8722e6fb8d23968a97e",
