@@ -2,7 +2,7 @@
 
 把案例输入交给已登记的求解器，自动完成准备、计算、结果标准化、解析解比较和 **HTML 交互报告**。
 
-当前已验证：**WSL Ubuntu + OpenFOAM Foundation 12 + couette-2d/Re=10**，支持串行及两个 MPI 进程。系统不设置数值通过阈值；`SUCCEEDED` 表示执行和必需结果完整，数值偏差需要结合解析解比较结果判断。
+当前已验证：**WSL Ubuntu + OpenFOAM Foundation 12 / OpenCFD 2506 + couette-2d/Re=10**，两个分支均支持串行及两个 MPI 进程。系统不设置数值通过阈值；`SUCCEEDED` 表示执行和必需结果完整，数值偏差需要结合解析解比较结果判断。
 
 ## 从这里开始
 
@@ -40,7 +40,7 @@ python3 -m simtest validate couette-2d
 | 命令 | 结果含义 |
 |---|---|
 | `list cases` | 扫描 `cases/` 下符合结构的案例和工况。当前示例为 `couette-2d/Re=10`，因此只显示一项是正常的。 |
-| `list solvers` | 列出代码中登记的 Adapter 版本，当前为 OpenFOAM 12；不是扫描机器上所有安装。 |
+| `list solvers` | 列出代码中登记的 Adapter 版本，当前为 OpenFOAM 12（Foundation）和 OpenFOAM 2506（OpenCFD）；不是扫描机器上所有安装。 |
 | `validate` | 检查案例、工况、模板与实际安装版本；返回 `valid: true` 后可运行。 |
 
 ### 2. 运行
@@ -48,7 +48,13 @@ python3 -m simtest validate couette-2d
 ~~~bash
 # 依次运行 case.yaml 中声明的全部执行配置；完成后合并成一份 HTML 报告
 python3 -m simtest run couette-2d
+
+# 显式指定发行分支版本
+python3 -m simtest run couette-2d --solver OpenFOAM@12
+python3 -m simtest run couette-2d --solver OpenFOAM@2506
 ~~~
+
+`OpenFOAM@12` 选择 Foundation 12，`OpenFOAM@2506` 选择 OpenCFD 2506；`OpenFOAM@latest` 只在同一分支内选择最新版本，同时登记两个分支时会明确报歧义，不会跨分支比较版本大小。
 
 执行参数在 `cases/<案例>/case.yaml` 的 `execution` 中声明，可以是单个映射，也可以是映射列表：
 
@@ -138,7 +144,7 @@ PY
 | 查看不同误差指标 | 解析解对比图可切换归一化误差的最大值、均值和 RMS |
 | 放大工作区 / 导出 | 使用“全屏”或“导出当前 SVG” |
 
-页面包括作业状态、交互曲线、最后一步监控值和最后一步解析解归一化偏差。页面不展开完整数值记录，也不显示绝对误差；归档中的完整监控 CSV、验证场、绝对误差、参数、硬件、版本、状态和参考来源保持不变，可从“追溯与下载”访问。曲线展示各工况 / 求解器所选作业中的最新实际版本。
+页面包括作业状态、交互曲线、最后一步监控值和最后一步解析解归一化偏差。页面不展开完整数值记录，也不显示绝对误差；归档中的完整监控 CSV、验证场、绝对误差、参数、硬件、版本、状态和参考来源保持不变，可从“追溯与下载”访问。曲线展示各工况 / 求解器所选作业中的最新实际版本，并按发行分支分别选择，跨分支不会互相覆盖。
 
 阅读时注意：
 
@@ -250,7 +256,7 @@ Uy = Uz = 0
 
 ### 本机环境
 
-当前项目已有安装登记：WSL Ubuntu、OpenFOAM Foundation 12、`/opt/openfoam12/etc/bashrc`，以及 ParaView 的 `pvpython`。WSL Python 要求 3.8+，依赖 PyYAML、Jinja2、matplotlib。HTML 交互不增加第三方 JS 或联网依赖。
+当前项目已有安装登记：WSL Ubuntu、OpenFOAM Foundation 12（`/opt/openfoam12`）与 OpenCFD 2506（`/usr/lib/openfoam/openfoam2506`），以及 ParaView 的 `pvpython`（`/opt/paraviewopenfoam510/bin`）。WSL Python 要求 3.8+，依赖 PyYAML、Jinja2、matplotlib。HTML 交互不增加第三方 JS 或联网依赖。
 
 其他机器先安装对应的 Linux 环境，再在 Linux / WSL 的项目根目录安装平台并登记求解器：
 
@@ -259,7 +265,14 @@ python3 -m pip install -e .
 python3 -m simtest setup --solver OpenFOAM --version 12 \
   --path /opt/openfoam12 --environment script \
   --environment-script /opt/openfoam12/etc/bashrc
+
+python3 -m simtest setup --solver OpenFOAM --version 2506 \
+  --path /usr/lib/openfoam/openfoam2506 --environment script \
+  --environment-script /usr/lib/openfoam/openfoam2506/etc/bashrc \
+  --path-prepend /opt/paraviewopenfoam510/bin
 ~~~
+
+OpenCFD 的 bashrc 不包含 ParaView，需用 `--path-prepend` 把 `pvpython` 加入环境；否则场读取阶段会报告找不到 `pvpython`。
 
 `config.yaml` 只保存安装和环境，并在 `.gitignore` 中忽略。替换已登记安装时显式加 `--force`，平台写入前会探测实际版本。日常直接使用 `python3 -m simtest`，安装包后也可在同一 Linux 环境使用 `simtest`。
 
@@ -272,18 +285,18 @@ python3 -m simtest setup --solver OpenFOAM --version 12 \
 | `No module named simtest` | 确认已进入 Linux / WSL 的工程根目录，并使用正确的 Python 环境；按首次配置说明安装项目。 |
 | 命令中的作业 ID 报错 | 不输入尖括号占位符，用 `list runs` 的真实 ID，按 `list runs` 输出填写。 |
 | WSL 提示 localhost 代理未镜像 | 来自 WSL 的代理提示。若已正常返回结果，不表示案例识别失败。本地仿真和离线报告无需外网。 |
-| 只列出一个案例 / 一个版本 | 当前仓库只提供一个示例案例和 Foundation 12 Adapter，属于预期。 |
+| 只列出一个案例 | 当前仓库只提供一个示例案例，属于预期；`list solvers` 会列出已登记的两个分支版本。 |
 | prepare-only 返回 QUEUED | 输入已准备，未启动求解；重新执行普通 run 进行计算。 |
 | report 提示未归档 | 用 `list runs` 查找真实归档 ID；仅准备的作业无法生成结果报告。 |
 | report 提示哈希不匹配 | 归档文件被修改或局部删除；恢复完整归档；相同身份不会覆盖损坏归档，不要修改清单掩盖损坏。 |
 
 ### 当前能力边界
 
-当前 OpenFOAM Adapter 的主程序为 `icoFoam`；模板指定其他 application 时明确拒绝，须在 Adapter 中登记并纳入身份指纹后才能接入。
+当前 OpenFOAM Adapter 支持 `icoFoam` 和 `simpleFoam`，由案例模板 `controlDict` 的 `application` 选择；模板指定其他 application 时明确拒绝。
 
-已验证 Foundation 12、单流体域、同格式 polyMesh、层流瞬态、serial 后端及 MPI。OpenMP / CUDA 在运行前返回 `UNSUPPORTED`。
+已验证 Foundation 12 与 OpenCFD 2506、单流体域、同格式 polyMesh、层流稳态、serial 后端及 MPI。OpenMP / CUDA 在运行前返回 `UNSUPPORTED`。
 
-AICFD-NewPre 当前未安装。CGNS / MSH 跨格式路径明确返回 `MeshConversionError`；其他 OpenFOAM 分支、多域同字段归档、张量参考和跨网格插值仍需扩展及真实样本验证。Foundation 整数版本与 OpenCFD vYYMM 不能混排。
+AICFD-NewPre 当前未安装。CGNS / MSH 跨格式路径明确返回 `MeshConversionError`；多域同字段归档、张量参考和跨网格插值仍需扩展及真实样本验证。跨分支不能比较版本新旧，`OpenFOAM@latest` 同时存在两个分支时明确报歧义。
 
 参考表达式使用受限解析器；单位服务支持常用乘法型 SI / 前缀单位。未知单位、带偏置温标和未知数据结构明确拒绝。无可读 Git commit 时记录原因，并保留源码及输入 SHA-256。
 
@@ -295,7 +308,7 @@ AICFD-NewPre 当前未安装。CGNS / MSH 跨格式路径明确返回 `MeshConve
 python3 -m unittest discover -s tests -v
 ~~~
 
-测试覆盖公共模板布局、Adapter 读取方法重载、非 icoFoam 安装绑定、自定义版本排序及环境隔离，覆盖 CLI 默认参数和映射校验、工况选择、失败作业报告、准备模式、参数与单位、模板、受限表达式、版本规则、监控边界与坏值、矢量误差、归档损坏、失败数据保留、进程组超时、原生 Reader 与导出回退，以及 HTML 报告分组和安全嵌入。
+测试覆盖公共模板布局、Adapter 读取方法重载、非 icoFoam 安装绑定、自定义版本排序、跨分支版本选择及环境隔离，覆盖 CLI 默认参数和映射校验、工况选择、失败作业报告、准备模式、参数与单位、模板、受限表达式、版本规则、监控边界与坏值、矢量误差、归档损坏、失败数据保留、进程组超时、原生 Reader 与导出回退，以及 HTML 报告分组和安全嵌入。
 
 另提供可选浏览器回归脚本（Node 22+，默认使用 Windows 已安装的 Edge）。这项检查在 **Windows PowerShell 的工程根目录** 单独执行，平台运行命令仍在 Linux / WSL 执行：
 

@@ -400,3 +400,10 @@
 - 操作：修改 `report.py`，最新版本分组改为 `(工况, 求解器, 分支)`，`version_key` 传入分支；图例 `label()` 在求解器后追加分支名；`tests/test_report.py` 新增两个分支同时保留的测试。
 - 验证：90 项 unittest 通过；待用双分支归档重新生成报告确认两个分支同时出现。
 - 未解决：Foundation 12 在网格改动后的回归、README 更新尚未完成。
+
+### 044｜2026-10-23｜双分支全链路验证与文档更新
+
+- 基线：Foundation 12 与 OpenCFD 2506 均已注册；90 项 unittest 通过。
+- 操作：更新 `README.md`，补充双分支、`OpenFOAM@12`/`OpenFOAM@2506` 选择器、跨分支 `latest` 歧义、v2506 `--path-prepend` 配置、`icoFoam`/`simpleFoam` 能力和验证边界。
+- 验证：v2506 串行与 MPI 均 `SUCCEEDED`，归档 22 个 VTU、`pvpython` 直读成功，报告均値 `0.5`、末步速度 x 最大误差 `2.33e-8`；Foundation 12 在网格去除 `cellZones` 后串行与 MPI 也均 `SUCCEEDED`；合并报告同时保留 Foundation 与 OpenCFD 两个分支的序列。未运行浏览器回归，未验证 OpenMP/CUDA 或其他内核。
+- 未解决：同版本多次历史归档会同时出现在合并报告中（按作业而非按执行配置去重），后续可再收敛；Ubuntu 20.04 上 v2506 已实测可运行，但非官方预编译目标。
