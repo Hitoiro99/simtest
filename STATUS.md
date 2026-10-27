@@ -414,3 +414,10 @@
 - 操作：修改 `report_assets/report.js`，在筛选面板打开/关闭时同步所属 `.panel-head` 的 `filter-open` 状态；修改 `report_assets/report.css`，提升打开筛选面板及其所属吸顶标题的层级；修改 `tests/report/check_html_report.cjs`，增加打开状态和计算层级断言。
 - 验证：`node --check report_assets/report.js`、`node --check tests/report/check_html_report.cjs` 通过；使用当前 CSS/JS 嵌入临时报告运行浏览器回归，新增筛选层级断言通过，随后仍在既有 `Box zoom did not change range` 断言失败；临时报告及目录已清理。
 - 未覆盖：未修复既有 Box zoom 交互失败；未运行完整 unittest 或求解器作业。
+
+### 046｜2026-10-27｜收敛有效求解身份与追溯边界
+
+- 目的：使当前工况的作业 ID 不受其他工况、说明文档、解释器缓存、报告代码和无关求解器实现影响，同时保留完整案例与平台代码追溯清单，并只接受无数字后缀的当前身份协议。
+- 操作：修改 `jobs.py`，新增案例源追溯清单、当前工况有效输入清单和当前 Adapter 继承链代码清单；作业身份改用当前 `case.yaml`、当前工况、唯一源网格、所选模板链、当前 Adapter/version code 及执行环境，完整案例和平台代码清单仅写入 provenance。修改 `solvers/OpenFOAM/adapter.py`，输入快照只保存当前案例/工况和所选模板链。修改 `archive.py`，仅接受 `simtest-run` 与 `simtest-identity`，并无条件复核规范身份 SHA-256。
+- 操作：修改 `tests/test_jobs.py`、`tests/test_archive.py`、`tests/test_report.py` 和 `tests/test_cli.py`，覆盖动态工况隔离、同值异名工况、有效模板和当前 Adapter 变化、运行期输入防篡改、未知/旧协议拒绝、规范报告夹具及多工况 CLI 前置条件。修改 `README.md`、`ARCHITECTURE.md` 和 `STATUS.md`，同步身份与追溯边界。清空 `artifacts/couette-2d/runs/` 与 `artifacts/couette-2d/reports/` 的旧内容，保留目录和根 `runs/.lock`。
+- 验证：WSL Ubuntu 下身份/归档专项 32 项、报告 16 项、完整 96 项 unittest 均通过；`git diff --check` 通过。未执行真实 OpenFOAM 求解或浏览器交互回归；旧归档已按授权删除，不能从工程目录恢复。

@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 import multiprocessing
 from pathlib import Path
@@ -15,9 +16,10 @@ from solvers.exceptions import ConfigurationError, PostprocessError
 
 def fixture():
     return {
+        "schema": "simtest-run",
         "job_id": "job-a",
         "created": "2026-10-13",
-        "identity": {"condition": "Re=10"},
+        "identity": {"schema": "simtest-identity", "condition": "Re=10"},
         "actual_solver": {"name": "OpenFOAM", "version": "12"},
         "execution": {"backend": "serial", "processes": 1},
         "case": {"monitors": {"u": {"unit": "m/s"}}},
@@ -30,7 +32,13 @@ def fixture():
     }
 
 
-def stored_fixture(root, job_id="job-a"):
+def stored_fixture(root, label="job-a"):
+    manifest = fixture()
+    manifest["identity"]["fixture"] = label
+    canonical = json.dumps(
+        manifest["identity"], ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+    job_id = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     path = root / "artifacts/example/runs/Re=10/OpenFOAM/12" / job_id
     path.mkdir(parents=True)
     (path / "input").mkdir()
@@ -40,7 +48,6 @@ def stored_fixture(root, job_id="job-a"):
     (path / "normalized").mkdir()
     (path / "normalized" / "monitors.csv").write_text("step,time,u\n0,0,1\n1,1,nan\n", encoding="utf-8")
     atomic_json(path / "status.json", {"status": "SUCCEEDED"})
-    manifest = fixture()
     manifest["job_id"] = job_id
     manifest["case"]["id"] = "example"
     manifest["input_sha256"] = inventory(path / "input")
@@ -50,10 +57,10 @@ def stored_fixture(root, job_id="job-a"):
     return path
 
 
-def report_worker(root, queue):
+def report_worker(root, job_id, queue):
     try:
         with patch("report.static_figures", return_value=[]):
-            queue.put(report(Path(root), "example", ["job-a"]))
+            queue.put(report(Path(root), "example", [job_id]))
     except BaseException as exc:
         queue.put({"error": repr(exc)})
 
@@ -216,12 +223,13 @@ class ReportTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             archive = stored_fixture(root)
-            self.assertEqual(archived_runs(root, "example")[0]["job_id"], "job-a")
+            job_id = archive.name
+            self.assertEqual(archived_runs(root, "example")[0]["job_id"], job_id)
             with self.assertRaises(ConfigurationError):
-                report(root, "example", ["job-a", "missing"])
+                report(root, "example", [job_id, "missing"])
             self.assertFalse((root / "artifacts/example/reports").exists())
             with patch("report.static_figures", return_value=[]):
-                result = report(root, "example", ["job-a"])
+                result = report(root, "example", [job_id])
             self.assertEqual(Path(result["report"]).suffix, ".html")
             self.assertTrue(Path(result["report"]).is_file())
             summary = Path(result["report"]).with_name("summary.csv").read_text(encoding="utf-8-sig")
@@ -229,22 +237,22 @@ class ReportTests(unittest.TestCase):
             self.assertIn("nan", summary)
             atomic_json(archive / "status.json", {"status": "CRASHED"})
             with self.assertRaises(PostprocessError):
-                report(root, "example", ["job-a"])
+                report(root, "example", [job_id])
 
     def test_report_reuses_deduplicated_selection_and_refuses_corruption(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            stored_fixture(root)
+            job_id = stored_fixture(root).name
             with patch("report.static_figures", return_value=[]):
-                first = report(root, "example", ["job-a", "job-a"])
-                second = report(root, "example", ["job-a"])
+                first = report(root, "example", [job_id, job_id])
+                second = report(root, "example", [job_id])
             self.assertEqual(first["report"], second["report"])
             self.assertFalse(first["reused"])
             self.assertTrue(second["reused"])
             self.assertEqual(first["runs"], 1)
             Path(first["report"]).write_text("corrupted", encoding="utf-8")
             with self.assertRaises(PostprocessError):
-                report(root, "example", ["job-a"])
+                report(root, "example", [job_id])
 
     def test_report_uses_csv_instead_of_manifest_observations(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -299,11 +307,11 @@ class ReportTests(unittest.TestCase):
     def test_report_selection_order_does_not_change_report_identity(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            stored_fixture(root, "job-a")
-            stored_fixture(root, "job-b")
+            job_a = stored_fixture(root, "job-a").name
+            job_b = stored_fixture(root, "job-b").name
             with patch("report.static_figures", return_value=[]):
-                first = report(root, "example", ["job-a", "job-b"])
-                second = report(root, "example", ["job-b", "job-a", "job-b"])
+                first = report(root, "example", [job_a, job_b])
+                second = report(root, "example", [job_b, job_a, job_b])
             self.assertEqual(first["report"], second["report"])
             self.assertTrue(second["reused"])
             self.assertEqual(len(Path(first["report"]).parent.name), 64)
@@ -311,10 +319,10 @@ class ReportTests(unittest.TestCase):
     def test_concurrent_report_requests_publish_one_report(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            stored_fixture(root)
+            job_id = stored_fixture(root).name
             context = multiprocessing.get_context("fork")
             queue = context.Queue()
-            workers = [context.Process(target=report_worker, args=(str(root), queue)) for _ in range(2)]
+            workers = [context.Process(target=report_worker, args=(str(root), job_id, queue)) for _ in range(2)]
             try:
                 for worker in workers:
                     worker.start()

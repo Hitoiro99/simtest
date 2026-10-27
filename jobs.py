@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 import datetime
 import hashlib
+import inspect
 from importlib import metadata
 import json
 import os
@@ -19,7 +20,8 @@ import sys
 
 from analysis import field_comparisons, monitor_comparisons
 from archive import archive, archive_path, cleanup_run, verify_archive
-from case_management.cases import execution_config, execution_configs, load_case, load_condition
+from case_management.cases import execution_config, execution_configs, load_case, load_condition, mesh_asset
+from case_management.templates import choose, template_files
 from platform_support.io import atomic_json, identifier, inventory, sha256, within
 from solvers.base import redact, run_capture
 from solvers.exceptions import (
@@ -62,6 +64,75 @@ def code_inventory():
             if relative.endswith((".py", ".js", ".css")):
                 hashes[(Path(name) / relative).as_posix()] = digest
     return hashes
+
+
+def source_inventory(path):
+    """返回可追溯的案例源文件清单，排除解释器缓存和其他运行生成缓存。"""
+    hashes = {}
+    for relative, digest in inventory(path).items():
+        parts = Path(relative).parts
+        if "__pycache__" in parts or Path(relative).suffix in (".pyc", ".pyo"):
+            continue
+        hashes[relative] = digest
+    return hashes
+
+
+def effective_case_inventory(case_path, condition_id, adapter):
+    """返回当前工况实际使用的案例、网格和有效模板清单；其他工况及文档不参与。"""
+    case_path = Path(case_path)
+    condition_file = within(case_path, case_path / "conditions" / (identifier(condition_id) + ".yaml"))
+    hashes = {
+        "case.yaml": sha256(case_path / "case.yaml"),
+        (Path("conditions") / condition_file.name).as_posix(): sha256(condition_file),
+    }
+
+    asset = mesh_asset(case_path)
+    if asset.is_dir():
+        for relative, digest in inventory(asset).items():
+            hashes[(Path(asset.name) / relative).as_posix()] = digest
+    else:
+        hashes[asset.name] = sha256(asset)
+
+    chain = choose(case_path, adapter)
+    for entry in chain:
+        definition = entry["_path"] / "template.yaml"
+        hashes[(Path("templates") / "definitions" / (entry["id"] + ".yaml")).as_posix()] = sha256(definition)
+    for relative, file in template_files(chain, adapter).items():
+        hashes[(Path("templates") / "effective" / relative).as_posix()] = sha256(file)
+    return hashes
+
+
+def adapter_code_inventory(adapter):
+    """返回当前 Adapter 继承链及其显式运行时辅助文件，不包含其他求解器或版本。"""
+    source_root = Path(__file__).resolve().parent
+    files = {}
+    for cls in type(adapter).__mro__:
+        try:
+            file = inspect.getsourcefile(cls)
+        except (OSError, TypeError):
+            continue
+        if not file:
+            continue
+        path = Path(file).resolve()
+        if path.suffix != ".py" or not path.is_file():
+            continue
+        try:
+            key = path.relative_to(source_root).as_posix()
+        except ValueError:
+            key = cls.__module__.replace(".", "/") + ".py"
+        files[key] = sha256(path)
+    for file in getattr(adapter, "identity_code_files", ()):
+        path = Path(file).resolve()
+        if not path.is_file():
+            raise ConfigurationError("Adapter 身份代码文件不存在: " + str(path))
+        try:
+            key = path.relative_to(source_root).as_posix()
+        except ValueError:
+            key = path.name
+        files[key] = sha256(path)
+    if not files:
+        raise ConfigurationError("无法确定当前 Adapter 的身份代码")
+    return dict(sorted(files.items()))
 
 
 def _read_system(path):
@@ -177,7 +248,10 @@ def prepare_job(root, case_id, condition_id, selector, options, execution=None):
             execution[name] = value
     execution = execution_config(execution)
     installation, environment, info, adapter = select_install(root, selector, getattr(options, "config", None))
-    code_hashes = code_inventory()
+    platform_code_hashes = code_inventory()
+    case_repository_hashes = source_inventory(path)
+    effective_input_hashes = effective_case_inventory(path, condition_id, adapter)
+    adapter_code_hashes = adapter_code_inventory(adapter)
     system = hardware_info(execution, info, environment)
     executables = {}
     for name, value in info.executables.items():
@@ -209,7 +283,7 @@ def prepare_job(root, case_id, condition_id, selector, options, execution=None):
     timeout = float(options.timeout)
     heartbeat_timeout = float(options.heartbeat_timeout)
     identity = {
-        "schema": "simtest-identity/2",
+        "schema": "simtest-identity",
         "case": case_id,
         "condition": condition_id,
         "case_revision": case["version"],
@@ -222,8 +296,8 @@ def prepare_job(root, case_id, condition_id, selector, options, execution=None):
         "execution": execution,
         "timeout": timeout,
         "heartbeat_timeout": heartbeat_timeout,
-        "case_sha256": inventory(path),
-        "code_sha256": code_hashes,
+        "effective_inputs_sha256": effective_input_hashes,
+        "adapter_code_sha256": adapter_code_hashes,
         "deployment": deployment,
         "executables": executables,
         "environment_sha256": environment_hashes,
@@ -243,11 +317,11 @@ def prepare_job(root, case_id, condition_id, selector, options, execution=None):
 
     revision = _git_revision(root)
     context.manifest = {
-        "schema": "simtest-run/2",
+        "schema": "simtest-run",
         "platform_version": __version__,
         "job_id": job_id,
         "identity": identity,
-        "id_method": "SHA-256 full canonical simtest-identity/2; excludes timestamps, elapsed metrics and paths generated by jobs",
+        "id_method": "SHA-256 canonical simtest-identity; effective current-condition inputs only",
         "case_revision": case["version"],
         "case": case,
         "condition": condition,
@@ -256,7 +330,10 @@ def prepare_job(root, case_id, condition_id, selector, options, execution=None):
         "adapter": {"name": adapter.name, "version": adapter.version, "version_rule": adapter.version_rule},
         "system": system,
         "execution": execution,
-        "code_sha256": code_hashes,
+        "provenance": {
+            "case_repository_inventory": case_repository_hashes,
+            "platform_code_inventory": platform_code_hashes,
+        },
         "environment": public_environment,
         "git_commit": revision,
         "git_unavailable_reason": None if revision else "No readable Git commit; exact code hashes recorded",
@@ -360,7 +437,8 @@ def run_job(context, adapter, prepare_only=False):
                     raise ConfigurationError("原执行进程已退出且作业未终结，保留中断现场，不自动重启")
                 if inventory(context.input) != context.manifest["input_sha256"] or inventory(context.work) != context.manifest["prepared_work_sha256"]:
                     raise ConfigurationError("准备后的输入或工作区被修改，拒绝接续")
-                if inventory(context.case_path) != context.manifest["identity"]["case_sha256"]:
+                current_inputs = effective_case_inventory(context.case_path, context.condition_id, adapter)
+                if current_inputs != context.manifest["identity"]["effective_inputs_sha256"]:
                     raise ConfigurationError("源案例已变化，拒绝用旧身份接续")
                 adapter.validate(context)
                 if prepare_only:
@@ -370,12 +448,14 @@ def run_job(context, adapter, prepare_only=False):
                 record("CREATED")
                 record("VALIDATING")
                 adapter.validate(context)
-                if inventory(context.case_path) != context.manifest["identity"]["case_sha256"]:
+                current_inputs = effective_case_inventory(context.case_path, context.condition_id, adapter)
+                if current_inputs != context.manifest["identity"]["effective_inputs_sha256"]:
                     raise ConfigurationError("源案例在身份采集后发生变化")
                 record("PREPROCESSING")
                 result = adapter.preprocess(context)
                 context.manifest["preprocess"] = result.diagnostics
-                if inventory(context.case_path) != context.manifest["identity"]["case_sha256"]:
+                current_inputs = effective_case_inventory(context.case_path, context.condition_id, adapter)
+                if current_inputs != context.manifest["identity"]["effective_inputs_sha256"]:
                     raise ConfigurationError("准备过程中源案例发生变化")
                 context.manifest["prepared_work_sha256"] = inventory(context.work)
                 record("QUEUED")

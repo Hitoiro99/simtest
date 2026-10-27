@@ -11,7 +11,7 @@ from pathlib import Path
 from case_management.cases import mesh_asset
 from platform_support.io import atomic_json, inventory, within
 from platform_support.units import factor
-from case_management.templates import materialize
+from case_management.templates import choose, materialize, template_files
 from . import __name__ as _package_name
 from solvers.base import SolverAdapter, find_tool, run_capture, supervise
 from solvers.exceptions import (
@@ -40,6 +40,7 @@ class OpenFOAMAdapter(SolverAdapter):
     supported_applications = ("icoFoam", "simpleFoam")
     environment_keys = ("WM_PROJECT_VERSION", "WM_PROJECT_DIR", "WM_OPTIONS", "OMP_NUM_THREADS")
     capabilities = frozenset({"transient", "steady", "incompressible", "laminar", "mpi", "serial"})
+    identity_code_files = (Path(__file__).with_name("vtk_bridge.py"),)
 
     def validate(self, context):
         from solvers.registry import mapped
@@ -177,9 +178,15 @@ class OpenFOAMAdapter(SolverAdapter):
         shutil.copy2(
             context.case_path / "conditions" / (context.condition_id + ".yaml"), source_snapshot / "condition.yaml"
         )
-        if (context.case_path / "references").exists():
-            shutil.copytree(context.case_path / "references", source_snapshot / "references")
-        shutil.copytree(context.case_path / "templates", source_snapshot / "templates")
+        chain = choose(context.case_path, self)
+        for entry in chain:
+            target = source_snapshot / "templates" / "definitions" / (entry["id"] + ".yaml")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(entry["_path"] / "template.yaml", target)
+        for relative, file in template_files(chain, self).items():
+            target = within(source_snapshot, source_snapshot / "templates" / "effective" / relative)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(file, target)
         generated = within(context.input, context.input / "dynamicCode")
         if generated.exists():
             shutil.rmtree(generated)

@@ -2,12 +2,12 @@
 
 把案例输入交给已登记的求解器，自动完成准备、计算、结果标准化、解析解比较和 **HTML 交互报告**。
 
-当前已验证：**WSL Ubuntu + OpenFOAM Foundation 12 / OpenCFD 2506 + couette-2d/Re=10**，两个分支均支持串行及两个 MPI 进程。系统不设置数值通过阈值；`SUCCEEDED` 表示执行和必需结果完整，数值偏差需要结合解析解比较结果判断。
+系统不设置数值通过阈值；`SUCCEEDED` 表示执行和必需结果完整，数值偏差需要结合解析解比较结果判断。
 
 ## 从这里开始
 
 - [日常使用](#日常使用)：查看案例 → 校验 → 运行 → 打开报告。
-- [报告怎么看](#报告怎么看)：曲线操作、数值含义和数据下载。
+- [报告查看](#报告查看)：曲线操作、数值含义和数据下载。
 - [目录与运行流程](#目录与运行流程)：各部分职责。
 - [首次配置与排错](#首次配置与排错)：其他机器部署、Linux 和 WSL 常见提示。
 
@@ -39,8 +39,8 @@ python3 -m simtest validate couette-2d
 
 | 命令 | 结果含义 |
 |---|---|
-| `list cases` | 扫描 `cases/` 下符合结构的案例和工况。当前示例为 `couette-2d/Re=10`，因此只显示一项是正常的。 |
-| `list solvers` | 列出代码中登记的 Adapter 版本，当前为 OpenFOAM 12（Foundation）和 OpenFOAM 2506（OpenCFD）；不是扫描机器上所有安装。 |
+| `list cases` | 扫描 `cases/` 下符合结构的案例和工况。 |
+| `list solvers` | 列出代码中登记的 Adapter 版本。 |
 | `validate` | 检查案例、工况、模板与实际安装版本；返回 `valid: true` 后可运行。 |
 
 ### 2. 运行
@@ -70,9 +70,11 @@ execution:
 
 `run` 按声明顺序逐个执行，全部作业进入同一份报告；命令行不再提供 `--processes`、`--backend`、`--openmp-threads` 覆盖。
 
-作业 ID 是完整运行身份的 64 位 SHA-256。同身份重复命令会校验并复用已有成功归档，返回 `reused: true`，不重新求解。不同身份使用独立工作区；同身份并发请求等待文件锁后复用，避免重复计算。标准结果和归档均校验成功后，删除整个 `runs/作业ID/`，日志、输入和标准结果只保留在归档中。失败或校验未完成时保留现场，重复请求返回原失败，不自动重试。
+作业 ID 是按 `simtest-identity` 协议对当前运行的有效身份计算得到的 64 位 SHA-256；协议名不使用数字后缀。同身份重复命令会校验并复用已有成功归档，返回 `reused: true`，不重新求解。不同身份使用独立工作区；同身份并发请求等待文件锁后复用，避免重复计算。标准结果和归档均校验成功后，删除整个 `runs/作业ID/`，日志、输入和标准结果只保留在归档中。失败或校验未完成时保留现场，重复请求返回原失败，不自动重试。
 
-身份包含案例与工况、全部源输入（含模拟起止时间、步长、计算步数和输出设置）、实际求解器版本及构建、执行参数、硬件/载体、环境指纹和平台执行代码。创建时间、实际耗时、随机数、生成的工作目录及运行后统计不参与判重。`manifest.json` 保存完整身份及追溯信息。修改文档不影响身份；修改执行代码或物理输入会产生新身份。
+身份只包含本次运行会实际使用并可能改变计算结果或执行条件的内容：案例清单、当前动态发现的工况文件及解析参数、唯一源网格、当前 Adapter 选中的有效模板；当前求解器的实际分支、版本、构建、可执行文件和所选 Adapter/version code；以及 execution、超时、部署环境、硬件/载体、Python 运行时和依赖版本。工况无需预先写入固定列表；新增或修改其他工况不改变当前工况的 ID，选择不同工况名称或修改当前工况有效输入则产生新 ID。
+
+完整案例仓库清单和完整平台代码清单仍写入 `manifest.json` 作为追溯证据，但不参与作业 ID。README、解释器缓存（`.pyc`/`__pycache__`）、报告代码或生成物、其他工况、未选模板和无关求解器/Adapter 的变化均不改变当前 ID；当前 Adapter 继承链及其显式身份辅助文件发生变化时会改变 ID。创建时间、实际耗时、随机数、生成的工作目录及运行后统计也不参与判重。
 
 `reused` 的耗时是原计算记录，不能当成本次性能测量。损坏归档拒绝复用和覆盖，须恢复完整数据后再处理。
 
@@ -126,7 +128,7 @@ PY
 
 使用浏览器打开输出的 HTML 文件。原生 Linux 图形环境可使用文件管理器打开；WSL 中的 `/mnt/c/...` 对应 Windows 的 `C:\...`，可在 Windows 文件资源管理器中双击 `report.html`。也可在 WSL 执行 `explorer.exe .` 打开当前工程目录，再进入 `artifacts/couette-2d/reports/`。
 
-## 报告怎么看
+## 报告查看
 
 报告使用固定 Jinja2 HTML 模板和 Apache ECharts 5.6.0 图表框架。图表数据、框架、样式和交互脚本全部内嵌，**无需联网、无需启动 Web 服务**。固定模板位于 `report_assets/report.html`，图表行为和样式分别位于 `report.js`、`report.css`；官方框架资源保持原样，版本、SHA-256 和许可证随项目保存。
 
@@ -219,7 +221,7 @@ integrity.json  报告产物完整性清单
 
 标准监控表采用 `step,time,各监控量` 的宽表。不同监控的采样位置留空。报告读取归档 CSV/VTU 并使用归档参考定义计算偏差；之后修改源案例公式不会改写旧归档或改变旧身份的参考定义。
 
-## 首个案例：couette-2d
+## 当前案例：couette-2d
 
 `couette-2d/Re=10` 是二维启动 Couette 流。两块平行板间充满不可压缩层流流体：下壁静止，上壁从 `t=0` 起以恒定速度 `U` 沿 X 方向运动，X 方向采用周期边界，Z 方向为 `empty`。内部速度初始为零，随后由黏性作用从上壁向流体内部扩散，并逐渐接近线性稳态速度分布。
 
@@ -262,12 +264,18 @@ Uy = Uz = 0
 
 ~~~bash
 python3 -m pip install -e .
-python3 -m simtest setup --solver OpenFOAM --version 12 \
-  --path /opt/openfoam12 --environment script \
+python3 -m simtest setup \
+  --solver OpenFOAM \
+  --version 12 \
+  --path /opt/openfoam12 \
+  --environment script \
   --environment-script /opt/openfoam12/etc/bashrc
 
-python3 -m simtest setup --solver OpenFOAM --version 2506 \
-  --path /usr/lib/openfoam/openfoam2506 --environment script \
+python3 -m simtest setup \
+  --solver OpenFOAM \
+  --version 2506 \
+  --path /usr/lib/openfoam/openfoam2506 \
+  --environment script \
   --environment-script /usr/lib/openfoam/openfoam2506/etc/bashrc \
   --path-prepend /opt/paraviewopenfoam510/bin
 ~~~

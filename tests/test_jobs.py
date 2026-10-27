@@ -22,6 +22,10 @@ class JobAdapter:
     version_rule = "integer"
     environment_keys = ("OMP_NUM_THREADS",)
 
+    @staticmethod
+    def version_key(version):
+        return int(version)
+
     def __init__(self, fail=False, counter=None):
         self.fail = fail
         self.counter = counter
@@ -29,6 +33,9 @@ class JobAdapter:
         self.executions = 0
 
     def validate(self, context):
+        return None
+
+    def validate_template(self, path):
         return None
 
     def preprocess(self, context):
@@ -83,6 +90,12 @@ class JobTests(unittest.TestCase):
         )
         self.condition_file = self.case_path / "conditions" / "Re=10.yaml"
         self.write_condition()
+        self.template_path = self.case_path / "templates" / "current"
+        self.template_path.mkdir(parents=True)
+        (self.template_path / "template.yaml").write_text(
+            'id: test-current\nsolver: TestSolver\ncompatibility: "*"\n', encoding="utf-8"
+        )
+        (self.template_path / "settings.template").write_text("endTime={{ end_time }}\n", encoding="utf-8")
         executable = self.root / "solver"
         executable.write_text("solver-binary-v1", encoding="utf-8")
         self.info = SolverInfo("TestSolver", "1", "build-a", "main", ["serial", "mpi"], {"solver": str(executable)})
@@ -91,6 +104,8 @@ class JobTests(unittest.TestCase):
         self.adapter = JobAdapter()
         self.hardware = {"machine": "machine-a", "cpu": "cpu-a", "memory_bytes": 1024, "gpus": []}
         self.codes = {"jobs.py": "code-v1"}
+        self.adapter_codes = {"solvers/base.py": "base-v1", "solvers/TestSolver/adapter.py": "adapter-v1"}
+        self.real_adapter_code_inventory = jobs.adapter_code_inventory
         self.options = SimpleNamespace(
             config=None, processes=None, backend=None, openmp_threads=None, timeout=30, heartbeat_timeout=10
         )
@@ -98,6 +113,7 @@ class JobTests(unittest.TestCase):
             ("jobs.select_install", {"side_effect": self.install}),
             ("jobs.hardware_info", {"side_effect": lambda *args: copy.deepcopy(self.hardware)}),
             ("jobs.code_inventory", {"side_effect": lambda: dict(self.codes)}),
+            ("jobs.adapter_code_inventory", {"side_effect": lambda adapter: dict(self.adapter_codes)}),
             ("jobs._git_revision", {"return_value": "commit-a"}),
         ):
             patcher = patch(target, **kwargs)
@@ -113,8 +129,8 @@ class JobTests(unittest.TestCase):
             % (end_time, delta_t, output_interval), encoding="utf-8"
         )
 
-    def prepare(self):
-        return jobs.prepare_job(self.root, "sample", "Re=10", "TestSolver@1", self.options)[0]
+    def prepare(self, condition_id="Re=10"):
+        return jobs.prepare_job(self.root, "sample", condition_id, "TestSolver@1", self.options)[0]
 
     def test_requested_execution_profile_name_is_recorded(self):
         profile = {"name": "mpi-2proc", "backend": "serial", "processes": 2, "openmp_threads": 1}
@@ -130,6 +146,9 @@ class JobTests(unittest.TestCase):
         with patch("jobs._git_revision", return_value="documentation-only-commit"):
             second = self.prepare()
         self.assertRegex(first.run_dir.name, r"^[0-9a-f]{64}$")
+        self.assertEqual(first.manifest["schema"], "simtest-run")
+        self.assertEqual(first.manifest["identity"]["schema"], "simtest-identity")
+        self.assertNotIn("/2", first.manifest["id_method"])
         self.assertEqual(first.run_dir.name, second.run_dir.name)
         self.assertNotEqual(first.manifest["created"], second.manifest["created"])
         self.assertNotIn("nonce", first.manifest["identity"])
@@ -150,6 +169,46 @@ class JobTests(unittest.TestCase):
         (self.case_path / "mesh.msh").write_text("mesh-v2", encoding="utf-8")
         self.assertNotEqual(original, self.prepare().run_dir.name)
 
+    def test_identity_ignores_unrelated_conditions_documents_caches_and_templates(self):
+        original = self.prepare().run_dir.name
+        other = self.case_path / "conditions" / "pressure-sweep.yaml"
+        other.write_text(self.condition_file.read_text(encoding="utf-8"), encoding="utf-8")
+        (self.case_path / "README.md").write_text("documentation", encoding="utf-8")
+        cache = self.case_path / "conditions" / "__pycache__"
+        cache.mkdir()
+        (cache / "condition.cpython-38.pyc").write_bytes(b"cache")
+        unrelated = self.case_path / "templates" / "other-solver"
+        unrelated.mkdir()
+        (unrelated / "template.yaml").write_text(
+            'id: other-solver\nsolver: OtherSolver\ncompatibility: "*"\n', encoding="utf-8"
+        )
+        (unrelated / "settings").write_text("unrelated", encoding="utf-8")
+
+        current = self.prepare()
+        self.assertEqual(original, current.run_dir.name)
+        provenance = current.manifest["provenance"]["case_repository_inventory"]
+        self.assertIn("conditions/pressure-sweep.yaml", provenance)
+        self.assertIn("README.md", provenance)
+        self.assertFalse(any("__pycache__" in name or name.endswith(".pyc") for name in provenance))
+
+        other.write_text("values: {}\n", encoding="utf-8")
+        self.assertEqual(original, self.prepare().run_dir.name)
+        other.unlink()
+        self.assertEqual(original, self.prepare().run_dir.name)
+
+    def test_condition_name_and_current_template_distinguish_identity(self):
+        original = self.prepare().run_dir.name
+        alias = self.case_path / "conditions" / "same-values.yaml"
+        alias.write_text(self.condition_file.read_text(encoding="utf-8"), encoding="utf-8")
+        self.assertNotEqual(original, self.prepare("same-values").run_dir.name)
+
+        (self.template_path / "settings.template").write_text("endTime={{ end_time }};\n", encoding="utf-8")
+        self.assertNotEqual(original, self.prepare().run_dir.name)
+
+    def test_adapter_code_inventory_skips_builtin_mro_members(self):
+        hashes = self.real_adapter_code_inventory(self.adapter)
+        self.assertIn("tests/test_jobs.py", hashes)
+
     def test_carrier_solver_execution_and_environment_change_identity(self):
         original = self.prepare().run_dir.name
         changes = (
@@ -166,7 +225,7 @@ class JobTests(unittest.TestCase):
         for mapping, key, value in (
             (self.hardware, "machine", "machine-b"),
             (self.hardware, "memory_bytes", 2048),
-            (self.codes, "jobs.py", "code-v2"),
+            (self.adapter_codes, "solvers/TestSolver/adapter.py", "adapter-v2"),
             (self.environment, "OMP_NUM_THREADS", "2"),
         ):
             with self.subTest(field=key):
@@ -174,8 +233,30 @@ class JobTests(unittest.TestCase):
                 mapping[key] = value
                 self.assertNotEqual(original, self.prepare().run_dir.name)
                 mapping[key] = saved
+        self.codes["jobs.py"] = "code-v2"
+        self.codes["report.py"] = "report-v2"
+        self.assertEqual(original, self.prepare().run_dir.name)
         Path(self.info.executables["solver"]).write_text("solver-binary-v2", encoding="utf-8")
         self.assertNotEqual(original, self.prepare().run_dir.name)
+
+    def test_runtime_guard_ignores_other_conditions_but_rejects_current_changes(self):
+        context = self.prepare()
+        (self.case_path / "conditions" / "added-later.yaml").write_text(
+            self.condition_file.read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        result = jobs.run_job(context, self.adapter)
+        self.assertEqual(result["status"], "SUCCEEDED")
+
+        mutable = self.case_path / "conditions" / "mutable.yaml"
+        mutable.write_text(self.condition_file.read_text(encoding="utf-8"), encoding="utf-8")
+        changed = self.prepare("mutable")
+        mutable.write_text(
+            "values:\n  end_time: {value: 2}\n  delta_t: {value: 0.1}\n  output_interval: {value: 1}\n",
+            encoding="utf-8",
+        )
+        result = jobs.run_job(changed, self.adapter)
+        self.assertEqual(result["status"], "INFRA_ERROR")
+        self.assertEqual(self.adapter.executions, 1)
 
     def test_success_reuses_archive_without_workspace_or_execution(self):
         context = self.prepare()

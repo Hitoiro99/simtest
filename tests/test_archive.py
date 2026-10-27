@@ -1,6 +1,7 @@
 """标准回读、不可变发布及工作区清理的边界回归。"""
 
 import copy
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -17,7 +18,10 @@ from solvers.exceptions import PostprocessError
 
 def make_context(root, fields=False):
     root = Path(root)
-    run = root / "runs" / ("a" * 64)
+    identity = {"schema": "simtest-identity", "case": "case", "condition": "default"}
+    canonical = json.dumps(identity, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    job_id = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    run = root / "runs" / job_id
     for name in ("work", "input", "logs", "normalized"):
         (run / name).mkdir(parents=True)
     (run / "work" / "native-result").write_text("retain until validation")
@@ -27,7 +31,7 @@ def make_context(root, fields=False):
     case = {"id": "case", "monitors": {"u": {"unit": "m/s"}, "v": {"unit": "m/s"}}}
     condition = {"references": {}}
     manifest = {
-        "job_id": run.name, "identity": {"case": "case", "condition": "default"},
+        "schema": "simtest-run", "job_id": job_id, "identity": identity,
         "case": case, "condition": condition, "actual_solver": {"name": "OpenFOAM", "version": "12"},
         "execution": {"processes": 1}, "input_sha256": inventory(run / "input"), "fields": [],
         "monitors": {"u": [{"step": 999, "time": 999, "value": 999}]},
@@ -91,6 +95,27 @@ def write_vtu(file):
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_current_identity_schema_always_validates_job_hash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            context = make_context(directory)
+            context.manifest["identity"]["condition"] = "changed"
+            with self.assertRaises(PostprocessError):
+                archive(context, {"status": "SUCCEEDED"})
+
+    def test_old_or_unknown_protocol_is_rejected(self):
+        for run_schema, identity_schema in (
+            ("simtest-run/2", "simtest-identity"),
+            ("simtest-run", "simtest-identity/2"),
+            ("unknown", "simtest-identity"),
+        ):
+            with self.subTest(run_schema=run_schema, identity_schema=identity_schema):
+                with tempfile.TemporaryDirectory() as directory:
+                    context = make_context(directory)
+                    context.manifest["schema"] = run_schema
+                    context.manifest["identity"]["schema"] = identity_schema
+                    with self.assertRaises(PostprocessError):
+                        archive(context, {"status": "SUCCEEDED"})
+
     def test_monitor_read_preserves_invalid_sampling_and_ignores_manifest_values(self):
         with tempfile.TemporaryDirectory() as temp:
             context = make_context(temp)

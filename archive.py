@@ -307,16 +307,21 @@ def load_observations(path, manifest):
 
 
 def _validate_contents(path, manifest):
-    required = ("job_id", "identity", "case", "condition", "actual_solver", "execution", "input_sha256")
+    required = ("schema", "job_id", "identity", "case", "condition", "actual_solver", "execution", "input_sha256")
     if any(name not in manifest for name in required):
         raise PostprocessError("作业元数据不完整")
+    if manifest["schema"] != "simtest-run":
+        raise PostprocessError("不支持的作业元数据协议")
     if not isinstance(manifest["identity"], dict) or not manifest["identity"]:
         raise PostprocessError("缺少完整作业身份")
-    if manifest["identity"].get("schema") == "simtest-identity/2":
-        canonical = json.dumps(manifest["identity"], ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
-        expected = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-        if manifest["job_id"] != expected:
-            raise PostprocessError("稳定作业哈希与完整身份不一致")
+    if manifest["identity"].get("schema") != "simtest-identity":
+        raise PostprocessError("不支持的作业身份协议")
+    canonical = json.dumps(
+        manifest["identity"], ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False
+    )
+    expected = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    if manifest["job_id"] != expected:
+        raise PostprocessError("稳定作业哈希与完整身份不一致")
     if not (path / "input").is_dir() or inventory(path / "input") != manifest["input_sha256"]:
         raise PostprocessError("只读输入快照缺失或被修改")
     if not manifest["input_sha256"]:
@@ -440,12 +445,16 @@ def archived_runs(root, case_id=None):
                 continue
             manifest = _json(file)
             status = _json(file.parent / "status.json")
-            if status["status"] != "SUCCEEDED":
-                continue
-            result.append({
-                "case": case.name, "job_id": manifest["job_id"], "condition": manifest["identity"]["condition"],
-                "solver": manifest["actual_solver"]["name"], "version": manifest["actual_solver"]["version"],
-                "processes": manifest["execution"]["processes"], "status": status["status"],
-                "created": manifest.get("created"), "archive": str(file.parent),
-            })
+            if status["status"] == "SUCCEEDED":
+                result.append({
+                    "case": case.name,
+                    "job_id": manifest["job_id"],
+                    "condition": manifest["identity"]["condition"],
+                    "solver": manifest["actual_solver"]["name"],
+                    "version": manifest["actual_solver"]["version"],
+                    "processes": manifest["execution"]["processes"],
+                    "status": status["status"],
+                    "created": manifest.get("created"),
+                    "archive": str(file.parent),
+                })
     return sorted(result, key=lambda item: (item["created"] or "", item["job_id"]))

@@ -104,7 +104,8 @@ class CliTests(unittest.TestCase):
             "simtest.run_job", side_effect=results
         ), patch("report.report", return_value={"report": "report.html"}) as report:
             code, stdout, stderr = self.invoke(
-                "run", CASE_ID, "--solver", "OpenFOAM@12", "--solver", "OpenFOAM@latest"
+                "run", CASE_ID, "--condition", "Re=10",
+                "--solver", "OpenFOAM@12", "--solver", "OpenFOAM@latest"
             )
         self.assertEqual(code, 1)
         self.assertEqual(stderr, "")
@@ -115,7 +116,7 @@ class CliTests(unittest.TestCase):
         with patch("simtest.prepare_job", return_value=(object(), object())) as prepare, patch(
             "simtest.run_job", return_value={"job_id": "prepared", "status": "QUEUED"}
         ), patch("report.report") as report:
-            code, stdout, stderr = self.invoke("run", CASE_ID, "--prepare-only")
+            code, stdout, stderr = self.invoke("run", CASE_ID, "--condition", "Re=10", "--prepare-only")
         self.assertEqual(code, 0)
         self.assertEqual(stderr, "")
         lines = [json.loads(line) for line in stdout.splitlines()]
