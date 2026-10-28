@@ -300,7 +300,7 @@ OpenCFD 的 bashrc 不包含 ParaView，需用 `--path-prepend` 把 `pvpython` �
 
 当前 OpenFOAM Adapter 支持 `icoFoam` 和 `simpleFoam`，由案例模板 `controlDict` 的 `application` 选择；模板指定其他 application 时明确拒绝。
 
-已验证 Foundation 12 与 OpenCFD 2506、单流体域、同格式 polyMesh、层流稳态、serial 后端及 MPI。OpenMP / CUDA 在运行前返回 `UNSUPPORTED`。
+已验证 Foundation 12 与 OpenCFD 2506、单流体域、同格式 polyMesh、层流稳态、serial 后端及 MPI。OpenFOAM Adapter 已在现有 serial/MPI 命令链上实现 capability 驱动的 OpenMP 环境与单 Rank CUDA 设备绑定；但当前两套已登记的求解器二进制均未探测到对应能力，因此 OpenMP / CUDA 仍在运行前返回 `UNSUPPORTED`，不能把源码树中的 OpenMP/CUDA 编译规则当作求解器已经支持。
 
 AICFD-NewPre 当前未安装。CGNS / MSH 跨格式路径明确返回 `MeshConversionError`；多域同字段归档、张量参考和跨网格插值仍需扩展及真实样本验证。跨分支不能比较版本新旧，`OpenFOAM@latest` 同时存在两个分支时明确报歧义。
 

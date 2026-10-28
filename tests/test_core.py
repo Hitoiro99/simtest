@@ -126,6 +126,72 @@ class CoreTests(unittest.TestCase):
         self.assertIn("postProcess", info.executables)
         self.assertNotIn("foamPostProcess", info.executables)
 
+    def test_openfoam_execution_backend_uses_serial_command_path(self):
+        adapter = V2506()
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            work = root / "work"
+            work.mkdir()
+            context = SimpleNamespace(
+                work=work,
+                input=root / "input",
+                execution={"backend": "openmp", "processes": 2, "openmp_threads": 4},
+                environment={"PATH": "/bin"},
+                timeout=30,
+                heartbeat_timeout=10,
+                manifest={"application": "icoFoam"},
+                info=SimpleNamespace(executables={"icoFoam": "/opt/icoFoam", "mpirun": "/usr/bin/mpirun"}),
+            )
+
+            command = adapter.build(context)
+
+        self.assertEqual(
+            command.argv,
+            ["/usr/bin/mpirun", "-np", "2", "/opt/icoFoam", "-case", str(work), "-parallel"],
+        )
+        self.assertEqual(command.env["OMP_NUM_THREADS"], "4")
+        self.assertNotIn("OMP_NUM_THREADS", context.environment)
+        self.assertEqual(context.manifest["backend_runtime"]["backend"], "openmp")
+
+    def test_openfoam_execution_backend_requires_probed_capability_and_resources(self):
+        adapter = V12()
+        with tempfile.TemporaryDirectory() as temp:
+            case_path = Path(temp)
+            mesh = case_path / "polyMesh"
+            mesh.mkdir()
+            for name in ("points", "faces", "owner", "neighbour", "boundary"):
+                (mesh / name).touch()
+            context = SimpleNamespace(
+                case_path=case_path,
+                case={},
+                execution={"backend": "openmp", "processes": 1, "openmp_threads": 2},
+                environment={},
+                manifest={"system": {"gpus": ["GPU-123, Example GPU, 1, 1024"]}},
+                info=SimpleNamespace(version="12", capabilities=["serial", "mpi"]),
+            )
+
+            with self.assertRaisesRegex(UnsupportedCaseError, "未探测到 openmp"):
+                adapter.validate(context)
+            context.info.capabilities.append("openmp")
+            with patch.object(adapter, "available_cpu_count", return_value=2):
+                adapter.validate(context)
+            context.execution.update(processes=2, openmp_threads=2)
+            with patch.object(adapter, "available_cpu_count", return_value=2), self.assertRaisesRegex(
+                UnsupportedCaseError, "超过本作业可用逻辑 CPU"
+            ):
+                adapter.validate(context)
+
+            context.execution.update(backend="cuda", processes=1, openmp_threads=1)
+            context.info.capabilities.append("cuda")
+            adapter.validate(context)
+            context.environment["CUDA_VISIBLE_DEVICES"] = "0,1"
+            with self.assertRaisesRegex(UnsupportedCaseError, "唯一可用 GPU"):
+                adapter.validate(context)
+            context.environment.clear()
+            context.execution["processes"] = 2
+            with self.assertRaisesRegex(UnsupportedCaseError, "MPI Rank 与 GPU"):
+                adapter.validate(context)
+
     def test_multiple_parameters_not_limited_to_example(self):
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "case1"

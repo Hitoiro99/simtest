@@ -434,3 +434,10 @@
 - 操作：新增 `case_common_definition()`；修改 `jobs.py`，以去除 `execution` 的规范共同案例定义替代完整 `case.yaml` 哈希，并继续由 identity 的当前 `execution` 字段区分每项配置。修改 `solvers/OpenFOAM/adapter.py`，`_source` 快照保存共同案例定义而非完整案例清单。修改 `ARCHITECTURE.md`、`README.md`，规定 execution 分区及 OpenMP/CUDA 的探测、命令、资源绑定和真实回归前提；修改 `tests/test_jobs.py`、`tests/test_cli.py`，覆盖其他 execution 隔离、共同配置变化和动态执行列表顺序。
 - 操作：按授权清空 `artifacts/` 全部归档和报告内容，以及 `runs/` 全部作业工作区；保留根 `runs/.lock`。新增归档和报告时会按各自锁策略重新创建所需锁文件。
 - 验证：WSL Ubuntu 下身份/CLI/Couette 相关 30 项 unittest 通过；完整 98 项 unittest 通过。未执行真实 OpenFOAM 求解或浏览器交互回归；OpenMP/CUDA 仍明确为 `UNSUPPORTED`。
+
+### 049｜2026-10-28｜在既有 OpenFOAM 运行链补充后端执行分支
+
+- 目的：不新增模块，在现有 serial 命令、MPI 分区和重构结构上补充 capability 驱动的 OpenMP/CUDA 校验与命令构建。
+- 操作：修改 `solvers/OpenFOAM/adapter.py`，按实际探测能力校验 backend，校验 MPI×OpenMP CPU 总量；OpenMP 复用现有求解器和 MPI 命令并在作业独立环境中设置 `OMP_NUM_THREADS`；CUDA 首期只接受单 MPI Rank 和唯一可见 GPU，记录实际设备绑定，拒绝未经实现的多 Rank GPU 共享。修改 `tests/test_core.py` 覆盖后端能力、资源限制及复用 serial/MPI 命令路径；更新 `README.md` 的实际能力边界。
+- 环境探查：Foundation 12 与 OpenCFD 2506 的 `icoFoam` 均链接 MPI，但未链接 OpenMP 或 CUDA 运行库；2506 源码中的 `Test-openmp.cpp` 和 CUDA wmake 规则不等于当前求解器二进制支持对应后端，因此两套版本仍只声明 serial/MPI。
+- 验证：WSL Ubuntu 下 `test_core.py` 22 项、完整 100 项 unittest 通过；真实 `python3 -m simtest validate couette-2d --solver OpenFOAM@2506` 在启动前按预期返回 `UNSUPPORTED`，诊断为当前 2506 构建未探测到 openmp 后端能力。未执行真实 OpenMP/CUDA 求解，当前安装不能记为支持对应后端。

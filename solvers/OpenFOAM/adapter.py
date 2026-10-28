@@ -42,18 +42,54 @@ class OpenFOAMAdapter(SolverAdapter):
     capabilities = frozenset({"transient", "steady", "incompressible", "laminar", "mpi", "serial"})
     identity_code_files = (Path(__file__).with_name("vtk_bridge.py"),)
 
+    @staticmethod
+    def available_cpu_count():
+        if hasattr(os, "sched_getaffinity"):
+            return len(os.sched_getaffinity(0))
+        return os.cpu_count() or 1
+
+    @staticmethod
+    def cuda_device(context):
+        visible = context.environment.get("CUDA_VISIBLE_DEVICES", "").strip()
+        if visible:
+            devices = [device.strip() for device in visible.split(",") if device.strip()]
+            if len(devices) == 1 and devices[0] not in ("-1", "none", "NoDevFiles"):
+                return devices[0]
+            return None
+
+        gpus = context.manifest.get("system", {}).get("gpus", [])
+        if len(gpus) != 1:
+            return None
+        return gpus[0].split(",", 1)[0].strip()
+
     def validate(self, context):
         from solvers.registry import mapped
 
         for section in ("monitors", "fields"):
             for name, declaration in getattr(context, "case", {}).get(section, {}).items():
                 mapped(declaration, name, self)
-        if context.execution["backend"] != "serial":
-            raise UnsupportedCaseError("当前 OpenFOAM Adapter 不支持请求的 OpenMP/CUDA 后端")
-        if context.execution["processes"] > 1 and "mpi" not in context.info.capabilities:
+
+        backend = context.execution["backend"]
+        processes = context.execution["processes"]
+        threads = context.execution.get("openmp_threads", 1)
+        capabilities = set(context.info.capabilities)
+        if backend not in capabilities:
+            raise UnsupportedCaseError(
+                "当前 OpenFOAM %s 构建未探测到 %s 后端能力" % (context.info.version, backend)
+            )
+        if processes > 1 and "mpi" not in capabilities:
             raise UnsupportedCaseError("MPI 请求无法满足")
-        if context.execution["processes"] > (os.cpu_count() or 1):
-            raise UnsupportedCaseError("MPI 进程数超过本机可用逻辑 CPU")
+        if backend == "openmp":
+            requested_cpus = processes * threads
+        else:
+            requested_cpus = processes
+        if requested_cpus > self.available_cpu_count():
+            raise UnsupportedCaseError("请求的 MPI 进程与 OpenMP 线程总数超过本作业可用逻辑 CPU")
+        if backend == "cuda":
+            if processes > 1:
+                raise UnsupportedCaseError("当前 OpenFOAM CUDA 路径尚未实现 MPI Rank 与 GPU 的可靠绑定")
+            if not self.cuda_device(context):
+                raise UnsupportedCaseError("CUDA 请求没有唯一可用 GPU；请通过部署环境限定 CUDA_VISIBLE_DEVICES")
         self.validate_mesh(mesh_asset(context.case_path))
 
     def validate_mesh(self, asset):
@@ -72,12 +108,14 @@ class OpenFOAMAdapter(SolverAdapter):
         if path.parts[0] not in ("0", "constant", "system"):
             raise ConfigurationError("OpenFOAM 原生模板文件须位于 0/constant/system")
 
-    def command(self, context, argv, timeout=None):
+    def command(self, context, argv, timeout=None, environment=None):
         if context.work.exists():
             location = context.work
         else:
             location = context.input
-        return Command(argv, location, context.environment, timeout or context.timeout, context.heartbeat_timeout)
+        if environment is None:
+            environment = context.environment
+        return Command(argv, location, environment, timeout or context.timeout, context.heartbeat_timeout)
 
     def native(self, context, tool, args, label, case_path=None):
         location = case_path or context.work
@@ -218,11 +256,24 @@ class OpenFOAMAdapter(SolverAdapter):
     def build(self, context):
         app = context.info.executables[context.manifest["application"]]
         argv = [app, "-case", str(context.work)]
+        environment = dict(context.environment)
+        backend = context.execution["backend"]
+        if backend == "openmp":
+            environment["OMP_NUM_THREADS"] = str(context.execution["openmp_threads"])
+        elif backend == "cuda":
+            environment["CUDA_VISIBLE_DEVICES"] = self.cuda_device(context)
         if context.execution["processes"] > 1:
             argv = (
                 [context.info.executables["mpirun"], "-np", str(context.execution["processes"])] + argv + ["-parallel"]
             )
-        return self.command(context, argv)
+        context.manifest["backend_runtime"] = {
+            "backend": backend,
+            "processes": context.execution["processes"],
+            "openmp_threads": context.execution["openmp_threads"],
+        }
+        if backend == "cuda":
+            context.manifest["backend_runtime"]["cuda_visible_devices"] = environment["CUDA_VISIBLE_DEVICES"]
+        return self.command(context, argv, environment=environment)
 
     def read_log(self, path):
         """读取完整原生日志时间轴和残差，保留坏行诊断；缺少时间轴时抛出 MissingOutputError。"""
