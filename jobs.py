@@ -20,7 +20,7 @@ import sys
 
 from analysis import field_comparisons, monitor_comparisons
 from archive import archive, archive_path, cleanup_run, verify_archive
-from case_management.cases import execution_config, execution_configs, load_case, load_condition, mesh_asset
+from case_management.cases import case_common_definition, execution_config, execution_configs, load_case, load_condition, mesh_asset
 from case_management.templates import choose, template_files
 from platform_support.io import atomic_json, identifier, inventory, sha256, within
 from solvers.base import redact, run_capture
@@ -78,11 +78,12 @@ def source_inventory(path):
 
 
 def effective_case_inventory(case_path, condition_id, adapter):
-    """返回当前工况实际使用的案例、网格和有效模板清单；其他工况及文档不参与。"""
+    """返回当前作业实际使用的共同案例配置、工况、网格和有效模板清单。"""
     case_path = Path(case_path)
     condition_file = within(case_path, case_path / "conditions" / (identifier(condition_id) + ".yaml"))
+    common_case = case_common_definition(load_case(case_path))
     hashes = {
-        "case.yaml": sha256(case_path / "case.yaml"),
+        "case-common.json": hashlib.sha256(_canonical(common_case)).hexdigest(),
         (Path("conditions") / condition_file.name).as_posix(): sha256(condition_file),
     }
 

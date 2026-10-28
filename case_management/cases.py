@@ -83,6 +83,13 @@ def execution_configs(execution):
     return profiles
 
 
+def case_common_definition(case):
+    """返回所有 execution 共用的案例定义；execution 由每个作业单独记录。"""
+    common = dict(case)
+    common.pop("execution", None)
+    return common
+
+
 def load_case(path):
     path = Path(path).resolve()
     case = read_yaml(path / "case.yaml")

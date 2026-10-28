@@ -427,3 +427,10 @@
 - 目的：移除案例执行配置中的展示性 `name`，使执行身份、重复校验和报告标签只依赖实际后端、MPI 进程数和 OpenMP 线程数。
 - 操作：修改 `case_management/cases.py`，`execution` 仅接受 `backend`、`processes`、`openmp_threads`，并以规范化三元组拒绝重复配置；修改 `cases/couette-2d/case.yaml`、`report.py`、`README.md`、`ARCHITECTURE.md`，删除示例名称并由运行参数生成报告标签。修改 `tests/test_core.py`、`tests/test_cli.py`、`tests/test_jobs.py`、`tests/test_report.py`，覆盖无名称配置、重复拒绝、传递顺序、归档记录和展示标签；更新 `STATUS.md` 并追加本记录。
 - 验证：WSL Ubuntu 下 `test_core.py` 20 项通过；完整 97 项 unittest 通过；未执行真实 OpenFOAM 求解或浏览器交互回归。
+
+### 048｜2026-10-28｜分区共同案例与当前执行配置身份
+
+- 目的：让共同案例定义继续约束全部作业身份，同时使未选中的 execution 配置不影响当前作业复用。
+- 操作：新增 `case_common_definition()`；修改 `jobs.py`，以去除 `execution` 的规范共同案例定义替代完整 `case.yaml` 哈希，并继续由 identity 的当前 `execution` 字段区分每项配置。修改 `solvers/OpenFOAM/adapter.py`，`_source` 快照保存共同案例定义而非完整案例清单。修改 `ARCHITECTURE.md`、`README.md`，规定 execution 分区及 OpenMP/CUDA 的探测、命令、资源绑定和真实回归前提；修改 `tests/test_jobs.py`、`tests/test_cli.py`，覆盖其他 execution 隔离、共同配置变化和动态执行列表顺序。
+- 操作：按授权清空 `artifacts/` 全部归档和报告内容，以及 `runs/` 全部作业工作区；保留根 `runs/.lock`。新增归档和报告时会按各自锁策略重新创建所需锁文件。
+- 验证：WSL Ubuntu 下身份/CLI/Couette 相关 30 项 unittest 通过；完整 98 项 unittest 通过。未执行真实 OpenFOAM 求解或浏览器交互回归；OpenMP/CUDA 仍明确为 `UNSUPPORTED`。

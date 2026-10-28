@@ -8,7 +8,7 @@ import re
 import shutil
 from pathlib import Path
 
-from case_management.cases import mesh_asset
+from case_management.cases import case_common_definition, mesh_asset
 from platform_support.io import atomic_json, inventory, within
 from platform_support.units import factor
 from case_management.templates import choose, materialize, template_files
@@ -174,7 +174,7 @@ class OpenFOAMAdapter(SolverAdapter):
         context.info.executables[application] = find_tool(application, context.environment)
         source_snapshot = context.input / "_source"
         source_snapshot.mkdir()
-        shutil.copy2(context.case_path / "case.yaml", source_snapshot / "case.yaml")
+        atomic_json(source_snapshot / "case-common.json", case_common_definition(context.case))
         shutil.copy2(
             context.case_path / "conditions" / (context.condition_id + ".yaml"), source_snapshot / "condition.yaml"
         )

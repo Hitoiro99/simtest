@@ -83,7 +83,11 @@ class JobTests(unittest.TestCase):
         (self.case_path / "mesh.msh").write_text("mesh-v1", encoding="utf-8")
         self.case_file = self.case_path / "case.yaml"
         self.case_file.write_text(
-            'id: sample\nversion: "1"\nvariables:\n'
+            'id: sample\nversion: "1"\nexecution:\n'
+            '  - backend: serial\n    processes: 1\n'
+            '  - backend: serial\n    processes: 2\n'
+            'constants:\n  shared_value: {type: real, value: 1}\n'
+            'variables:\n'
             '  end_time: {type: real, required: true}\n'
             '  delta_t: {type: real, required: true}\n'
             '  output_interval: {type: integer, required: true}\n', encoding="utf-8"
@@ -168,6 +172,20 @@ class JobTests(unittest.TestCase):
                 self.assertNotEqual(original, self.prepare().run_dir.name)
         self.write_condition()
         (self.case_path / "mesh.msh").write_text("mesh-v2", encoding="utf-8")
+        self.assertNotEqual(original, self.prepare().run_dir.name)
+
+    def test_common_case_definition_changes_all_profiles_but_other_profiles_do_not(self):
+        original = self.prepare().run_dir.name
+        profile = "  - backend: serial\n    processes: 2\n"
+        replacement = "  - backend: openmp\n    processes: 2\n    openmp_threads: 8\n"
+        self.case_file.write_text(
+            self.case_file.read_text(encoding="utf-8").replace(profile, replacement), encoding="utf-8"
+        )
+        self.assertEqual(original, self.prepare().run_dir.name)
+
+        self.case_file.write_text(
+            self.case_file.read_text(encoding="utf-8").replace("value: 1", "value: 2"), encoding="utf-8"
+        )
         self.assertNotEqual(original, self.prepare().run_dir.name)
 
     def test_identity_ignores_unrelated_conditions_documents_caches_and_templates(self):

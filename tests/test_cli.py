@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import yaml
 
+from case_management.cases import execution_configs, load_case
 from simtest import main
 from solvers.OpenFOAM.versions.v12 import V12
 
@@ -126,6 +127,9 @@ class CliTests(unittest.TestCase):
                 (call.kwargs["execution"]["backend"], call.kwargs["execution"]["processes"])
                 for call in prepare.call_args_list
             ],
-            [("serial", 1), ("serial", 2)],
+            [
+                (profile["backend"], profile["processes"])
+                for profile in execution_configs(load_case(self.case_path)["execution"])
+            ],
         )
         report.assert_not_called()

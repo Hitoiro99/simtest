@@ -1192,13 +1192,19 @@ simtest setup \
 
 身份只包含当前运行的有效输入和执行条件：
 
-- 当前 `case.yaml`、动态发现并选中的 `conditions/<condition-id>.yaml`、解析后的当前工况参数、唯一源网格，以及所选 Adapter 对应模板继承链叠加后的有效模板文件；
+- 当前 `case.yaml` 去除 `execution` 后的共同案例定义、动态发现并选中的 `conditions/<condition-id>.yaml`、解析后的当前工况参数、唯一源网格，以及所选 Adapter 对应模板继承链叠加后的有效模板文件；
 - 当前求解器的内核名称、发行分支、探测到的实际版本与构建、可执行文件，所选 Adapter 变更点及其继承链源码和显式声明的身份辅助文件；
 - execution 配置、超时、安装与环境指纹、硬件/载体信息，以及实际参与运行的 Python 运行时和依赖版本。
 
-工况按 `conditions/*.yaml` 动态发现，不维护固定工况注册列表。工况 ID 是身份的一部分；新增、删除或修改其他工况不得改变当前工况的作业 ID，修改当前工况文件、当前案例清单、源网格、有效模板或解析参数则必须产生新 ID。相同内容使用不同工况 ID 时仍视为不同作业，避免归档语义混淆。
+工况按 `conditions/*.yaml` 动态发现，不维护固定工况注册列表。工况 ID 是身份的一部分；新增、删除或修改其他工况不得改变当前工况的作业 ID，修改当前工况文件、共同案例定义、源网格、有效模板或解析参数则必须产生新 ID。相同内容使用不同工况 ID 时仍视为不同作业，避免归档语义混淆。`execution` 列表的每项都是独立配置：当前项由 identity 的 `execution` 字段参与判重，新增、删除或修改其他项不得改变当前项的作业 ID。
 
 完整案例仓库 inventory 和完整平台代码 inventory 只作为追溯信息写入 `manifest.json`，不参与作业 ID。README 等说明文档、`.pyc`/`__pycache__`、报告代码及报告生成物、其他工况、未选模板、无关求解器或无关 Adapter 的变化不得使当前计算失去复用资格。当前 Adapter/version code 的变化必须进入身份；平台代码清单仍应完整记录，以便解释历史运行环境。
+
+### OpenMP 与 CUDA 接入前提
+
+`backend: openmp` 和 `backend: cuda` 是对每个 MPI 进程内部计算方式的请求，不是通过设置环境变量即可默认启用的能力。Adapter 只有在 `probe()` 确认当前求解器版本、构建和本机资源具备对应能力后，才能声明 `openmp` 或 `cuda`；`validate()` 必须校验进程、线程或 GPU 组合；`build()` 必须构造经验证的命令、环境和绑定策略；`postprocess()` 必须与串行/MPI 基线做结果可读性和数值偏差回归。
+
+OpenMP 接入至少应验证目标求解器的实际线程运行契约、`OMP_NUM_THREADS` 传递、`processes × openmp_threads` 的资源限制，以及串行、纯 MPI、纯 OpenMP 和混合 MPI×OpenMP 的真实样例。CUDA 接入必须绑定到明确的 GPU 求解器构建和版本变更点，探测驱动、可见设备和每个 MPI 进程的设备映射；未经验证不得让多个 MPI 进程隐式共享 GPU。当前 OpenFOAM 12 与 2506 Adapter 只声明 serial/MPI，OpenMP/CUDA 继续返回 `UNSUPPORTED`，直到上述探测、命令与真实回归完成。
 
 创建时间、运行目录、实际耗时、资源使用结果、随机 nonce 和其他运行后统计不参与身份。复用时必须同时校验作业 ID、完整规范身份和归档完整性；损坏或身份不一致的归档拒绝覆盖和复用。
 
