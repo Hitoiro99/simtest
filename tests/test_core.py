@@ -98,12 +98,17 @@ class CoreTests(unittest.TestCase):
         single = execution_configs({"backend": "serial", "processes": 1})
         self.assertEqual([profile["processes"] for profile in single], [1])
         profiles = execution_configs([
-            {"name": "serial-1proc", "backend": "serial", "processes": 1},
-            {"name": "mpi-2proc", "backend": "serial", "processes": 2},
+            {"backend": "serial", "processes": 1},
+            {"backend": "serial", "processes": 2},
         ])
-        self.assertEqual([profile["name"] for profile in profiles], ["serial-1proc", "mpi-2proc"])
         self.assertEqual([profile["processes"] for profile in profiles], [1, 2])
-        for value in ([], [{"name": "a"}, {"name": "a"}], [1], "serial"):
+        for value in (
+            [],
+            [{"backend": "serial", "processes": 1}, {"backend": "serial", "processes": 1, "openmp_threads": 1}],
+            [{"name": "serial-1proc", "backend": "serial", "processes": 1}],
+            [1],
+            "serial",
+        ):
             with self.subTest(value=value), self.assertRaises(ConfigurationError):
                 execution_configs(value)
 

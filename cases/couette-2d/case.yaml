@@ -4,12 +4,10 @@ title: 稳态二维 Couette 流
 tags: [internal-flow, incompressible, laminar, steady, analytical]
 
 execution:
-  - name: serial-1proc
-    backend: serial
+  - backend: serial
     processes: 1
 
-  - name: mpi-2proc
-    backend: serial
+  - backend: serial
     processes: 2
 
 constants:

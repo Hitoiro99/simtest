@@ -122,7 +122,10 @@ class CliTests(unittest.TestCase):
         lines = [json.loads(line) for line in stdout.splitlines()]
         self.assertEqual([item["status"] for item in lines], ["QUEUED", "QUEUED"])
         self.assertEqual(
-            [call.kwargs["execution"]["name"] for call in prepare.call_args_list],
-            ["serial-1proc", "mpi-2proc"],
+            [
+                (call.kwargs["execution"]["backend"], call.kwargs["execution"]["processes"])
+                for call in prepare.call_args_list
+            ],
+            [("serial", 1), ("serial", 2)],
         )
         report.assert_not_called()

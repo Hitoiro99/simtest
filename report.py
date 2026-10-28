@@ -220,14 +220,15 @@ def condition_name(manifest):
 
 
 def execution_label(execution):
-    if execution.get("name"):
-        return execution["name"]
     processes = execution.get("processes", 1)
-    mode = "%d procs" % processes
     backend = execution.get("backend", "serial")
-    if backend != "serial":
-        mode += " / " + backend
-    return mode
+    process_label = "process" if processes == 1 else "processes"
+    parts = [backend, "%d %s" % (processes, process_label)]
+    if backend == "openmp":
+        threads = execution.get("openmp_threads", 1)
+        thread_label = "thread" if threads == 1 else "threads"
+        parts.append("%d %s" % (threads, thread_label))
+    return " / ".join(parts)
 
 
 def label(manifest):

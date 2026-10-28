@@ -209,6 +209,7 @@ fields:
 - `openmp` 后端要求 `openmp_threads >= 1`，并将其转换为目标求解器参数或 `OMP_NUM_THREADS`；
 - 求解器适配器必须在启动前检查对应版本是否支持请求的 MPI、OpenMP 或 CUDA 组合，不支持时返回 `UNSUPPORTED`；
 - 网格分区数默认等于 `processes`，除非相应求解器明确采用其他并行模型。
+- `execution` 只允许 `backend`、`processes` 和 `openmp_threads`，不得提供展示性 `name`；列表中规范化后的三元组必须唯一。
 
 `constants`、`variables` 和 `derived_variables` 共享同一个名称空间，三类条目之间禁止同名；加载案例时一旦发现冲突立即报错。`monitors` 和 `fields` 内部的 ID 也必须各自唯一。
 

@@ -38,6 +38,10 @@ def typed(value, declaration):
 
 def execution_config(execution):
     execution = dict(mapping(execution, "execution"))
+    allowed = {"backend", "processes", "openmp_threads"}
+    unknown = set(execution) - allowed
+    if unknown:
+        raise ConfigurationError("execution 含不支持字段: " + ",".join(sorted(unknown)))
     backend = execution.get("backend", "serial")
     processes = execution.get("processes", 1)
     threads = execution.get("openmp_threads", 1)
@@ -66,18 +70,15 @@ def execution_configs(execution):
     if not entries:
         raise ConfigurationError("execution 至少需要一个配置")
     profiles = []
-    names = set()
+    signatures = set()
     for entry in entries:
         if not isinstance(entry, dict):
             raise ConfigurationError("execution 列表项必须为映射")
         profile = execution_config(entry)
-        name = entry.get("name")
-        if name is not None:
-            identifier(name)
-            if name in names:
-                raise ConfigurationError("execution name 重复: " + name)
-            names.add(name)
-            profile["name"] = name
+        signature = (profile["backend"], profile["processes"], profile["openmp_threads"])
+        if signature in signatures:
+            raise ConfigurationError("execution 配置重复")
+        signatures.add(signature)
         profiles.append(profile)
     return profiles
 

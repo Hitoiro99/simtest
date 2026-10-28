@@ -10,7 +10,16 @@ from unittest.mock import patch
 from archive import archived_runs, manifest_digest
 from simtest import parser
 from platform_support.io import atomic_json, inventory
-from report import build_charts, field_step, final_field_rows, log_tick_label, monitor_rows, render_html, report
+from report import (
+    build_charts,
+    execution_label,
+    field_step,
+    final_field_rows,
+    log_tick_label,
+    monitor_rows,
+    render_html,
+    report,
+)
 from solvers.exceptions import ConfigurationError, PostprocessError
 
 
@@ -66,6 +75,14 @@ def report_worker(root, job_id, queue):
 
 
 class ReportTests(unittest.TestCase):
+    def test_execution_label_is_derived_from_runtime_configuration(self):
+        self.assertEqual(execution_label({"backend": "serial", "processes": 1}), "serial / 1 process")
+        self.assertEqual(execution_label({"backend": "serial", "processes": 2}), "serial / 2 processes")
+        self.assertEqual(
+            execution_label({"backend": "openmp", "processes": 2, "openmp_threads": 8}),
+            "openmp / 2 processes / 8 threads",
+        )
+
     def test_invalid_last_and_sampling_axes_are_preserved(self):
         m = fixture()
         m["condition"] = {"references": {"exp": {"kind": "experimental", "monitor": "u"}}}

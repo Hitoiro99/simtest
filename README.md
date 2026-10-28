@@ -60,15 +60,13 @@ python3 -m simtest run couette-2d --solver OpenFOAM@2506
 
 ~~~yaml
 execution:
-  - name: serial-1proc
-    backend: serial
+  - backend: serial
     processes: 1
-  - name: mpi-2proc
-    backend: serial
+  - backend: serial
     processes: 2
 ~~~
 
-`run` 按声明顺序逐个执行，全部作业进入同一份报告；命令行不再提供 `--processes`、`--backend`、`--openmp-threads` 覆盖。
+`execution` 不使用名称；`backend`、`processes` 和 `openmp_threads` 共同定义一项执行配置，规范化后相同的配置会报错。`run` 按声明顺序逐个执行，全部作业进入同一份报告；命令行不再提供 `--processes`、`--backend`、`--openmp-threads` 覆盖。
 
 作业 ID 是按 `simtest-identity` 协议对当前运行的有效身份计算得到的 64 位 SHA-256；协议名不使用数字后缀。同身份重复命令会校验并复用已有成功归档，返回 `reused: true`，不重新求解。不同身份使用独立工作区；同身份并发请求等待文件锁后复用，避免重复计算。标准结果和归档均校验成功后，删除整个 `runs/作业ID/`，日志、输入和标准结果只保留在归档中。失败或校验未完成时保留现场，重复请求返回原失败，不自动重试。
 

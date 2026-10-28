@@ -132,12 +132,13 @@ class JobTests(unittest.TestCase):
     def prepare(self, condition_id="Re=10"):
         return jobs.prepare_job(self.root, "sample", condition_id, "TestSolver@1", self.options)[0]
 
-    def test_requested_execution_profile_name_is_recorded(self):
-        profile = {"name": "mpi-2proc", "backend": "serial", "processes": 2, "openmp_threads": 1}
+    def test_requested_execution_profile_is_normalized_without_name(self):
+        profile = {"backend": "serial", "processes": 2, "openmp_threads": 1}
         context = jobs.prepare_job(
             self.root, "sample", "Re=10", "TestSolver@1", self.options, execution=profile
         )[0]
-        self.assertEqual(context.manifest["execution"]["name"], "mpi-2proc")
+        self.assertNotIn("name", context.manifest["execution"])
+        self.assertEqual(context.manifest["execution"]["backend"], "serial")
         self.assertEqual(context.manifest["execution"]["processes"], 2)
 
     def test_identity_is_stable_and_prepare_has_no_side_effect(self):

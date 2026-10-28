@@ -421,3 +421,9 @@
 - 操作：修改 `jobs.py`，新增案例源追溯清单、当前工况有效输入清单和当前 Adapter 继承链代码清单；作业身份改用当前 `case.yaml`、当前工况、唯一源网格、所选模板链、当前 Adapter/version code 及执行环境，完整案例和平台代码清单仅写入 provenance。修改 `solvers/OpenFOAM/adapter.py`，输入快照只保存当前案例/工况和所选模板链。修改 `archive.py`，仅接受 `simtest-run` 与 `simtest-identity`，并无条件复核规范身份 SHA-256。
 - 操作：修改 `tests/test_jobs.py`、`tests/test_archive.py`、`tests/test_report.py` 和 `tests/test_cli.py`，覆盖动态工况隔离、同值异名工况、有效模板和当前 Adapter 变化、运行期输入防篡改、未知/旧协议拒绝、规范报告夹具及多工况 CLI 前置条件。修改 `README.md`、`ARCHITECTURE.md` 和 `STATUS.md`，同步身份与追溯边界。清空 `artifacts/couette-2d/runs/` 与 `artifacts/couette-2d/reports/` 的旧内容，保留目录和根 `runs/.lock`。
 - 验证：WSL Ubuntu 下身份/归档专项 32 项、报告 16 项、完整 96 项 unittest 均通过；`git diff --check` 通过。未执行真实 OpenFOAM 求解或浏览器交互回归；旧归档已按授权删除，不能从工程目录恢复。
+
+### 047｜2026-10-28｜以实际参数定义执行配置
+
+- 目的：移除案例执行配置中的展示性 `name`，使执行身份、重复校验和报告标签只依赖实际后端、MPI 进程数和 OpenMP 线程数。
+- 操作：修改 `case_management/cases.py`，`execution` 仅接受 `backend`、`processes`、`openmp_threads`，并以规范化三元组拒绝重复配置；修改 `cases/couette-2d/case.yaml`、`report.py`、`README.md`、`ARCHITECTURE.md`，删除示例名称并由运行参数生成报告标签。修改 `tests/test_core.py`、`tests/test_cli.py`、`tests/test_jobs.py`、`tests/test_report.py`，覆盖无名称配置、重复拒绝、传递顺序、归档记录和展示标签；更新 `STATUS.md` 并追加本记录。
+- 验证：WSL Ubuntu 下 `test_core.py` 20 项通过；完整 97 项 unittest 通过；未执行真实 OpenFOAM 求解或浏览器交互回归。
