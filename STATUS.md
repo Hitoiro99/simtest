@@ -441,3 +441,11 @@
 - 操作：修改 `solvers/OpenFOAM/adapter.py`，按实际探测能力校验 backend，校验 MPI×OpenMP CPU 总量；OpenMP 复用现有求解器和 MPI 命令并在作业独立环境中设置 `OMP_NUM_THREADS`；CUDA 首期只接受单 MPI Rank 和唯一可见 GPU，记录实际设备绑定，拒绝未经实现的多 Rank GPU 共享。修改 `tests/test_core.py` 覆盖后端能力、资源限制及复用 serial/MPI 命令路径；更新 `README.md` 的实际能力边界。
 - 环境探查：Foundation 12 与 OpenCFD 2506 的 `icoFoam` 均链接 MPI，但未链接 OpenMP 或 CUDA 运行库；2506 源码中的 `Test-openmp.cpp` 和 CUDA wmake 规则不等于当前求解器二进制支持对应后端，因此两套版本仍只声明 serial/MPI。
 - 验证：WSL Ubuntu 下 `test_core.py` 22 项、完整 100 项 unittest 通过；真实 `python3 -m simtest validate couette-2d --solver OpenFOAM@2506` 在启动前按预期返回 `UNSUPPORTED`，诊断为当前 2506 构建未探测到 openmp 后端能力。未执行真实 OpenMP/CUDA 求解，当前安装不能记为支持对应后端。
+
+### 050｜2026-10-29｜改进报告表头排序与数据驱动图表
+
+- 目的：把排序从筛选面板移到可排序字段表头，支持按选择顺序执行稳定的多字段排序；根据实际数据范围调整纵轴主刻度，并避免报告模板把输出限制为固定的三类图表。
+- 操作：修改 `report.py`、`report_assets/report.html`、`report_assets/report.js`、`report_assets/report.css`，为表格列声明排序能力和数据类型，增加实心升降序按钮、方向切换/取消、优先级保持及前置键已唯一时禁用后续排序；序号和作业 ID 不提供排序。普通监控量不再要求存在实验参考值才绘图；图表描述声明渲染器、动态分组和可选统计量，模板按实际分组生成导航和区段。纵轴按可见数据范围、坐标类型和图表高度选择主刻度，对数轴增加较淡次刻度。
+- 操作：修改 `tests/test_report.py`、`tests/report/check_html_report.cjs`，覆盖无参考监控量、动态分组、表头控件、多字段优先级、方向切换/取消、唯一键阻止后续排序和自适应刻度；修改 `ARCHITECTURE.md`、`README.md` 同步数据驱动图表、刻度和排序约束；更新 `STATUS.md` 并追加本记录。新增、删除、移动/重命名源文件：无。
+- 验证：`test_report.py` 18 项全部通过；`node --check report_assets/report.js` 与 `node --check tests/report/check_html_report.cjs` 通过。Edge 离线浏览器回归已执行并通过本次新增的动态分组、自适应刻度和多字段排序断言，随后两次均在既有 `Box zoom did not change range` 断言失败；视觉截图检查确认实心三角、字段对齐、颜色和作业 ID 无排序入口符合现有页面风格，临时 HTML 与截图已清理。
+- 验证：完整 96 项 unittest 中 88 项通过、7 项失败、1 项 setUpClass 错误；失败集中于修改前已暂存的案例/单位改动，错误为 `wall_gap 必须为字典`、`type 必须为字典` 等，涉及 `test_couette_case.py` 和 `test_cli.py`，未将其记为本次报告功能通过。未执行真实求解或重新打包。

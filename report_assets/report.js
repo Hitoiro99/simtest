@@ -4,7 +4,11 @@
     const charts = JSON.parse(document.getElementById('chart-data').textContent);
     const colors = ['#1377bd', '#d66c16', '#239278', '#a254b5', '#c1425a', '#668329', '#675fc1', '#087f91'];
     const finite = value => typeof value === 'number' && Number.isFinite(value);
-    const statistics = [['max', '最大值'], ['mean', '体积加权平均值'], ['rms', '体积加权 RMS']];
+    const collator = new Intl.Collator('zh-CN', {numeric: true, sensitivity: 'base'});
+    const statusOrder = {
+        SUCCEEDED: 0, AVAILABLE: 0, NO_REFERENCE: 1, UNAVAILABLE: 2,
+        UNSUPPORTED: 3, TIMEOUT: 4, CANCELLED: 5, CRASHED: 6, INFRA_ERROR: 7
+    };
 
     function element(tag, text, parent, attributes = {}) {
         const node = document.createElement(tag);
@@ -29,7 +33,8 @@
         constructor(chart, container) {
             this.chart = chart;
             this.log = chart.yscale === 'log';
-            this.statistic = 'max';
+            this.valueOptions = chart.value_options || [];
+            this.valueKey = chart.default_value || (this.valueOptions[0] && this.valueOptions[0].key) || null;
             this.hidden = new Set();
             this.card = element('article', null, container, {
                 class: 'chart', id: chart.id
@@ -56,11 +61,12 @@
                 this.log = scale.value === 'log';
                 this.render();
             };
-            if (chart.kind === 'analytical') {
+            if (this.valueOptions.length > 1) {
                 const metric = element('select', null, bar, {'aria-label': '误差统计量'});
-                statistics.forEach(([key, name]) => element('option', name, metric, {value: key}));
+                this.valueOptions.forEach(option => element('option', option.label, metric, {value: option.key}));
+                metric.value = this.valueKey;
                 metric.onchange = () => {
-                    this.statistic = metric.value;
+                    this.valueKey = metric.value;
                     this.render();
                 };
             }
@@ -117,19 +123,15 @@
         }
 
         value(point) {
-            if (this.chart.kind === 'analytical') {
-                const key = this.chart.error_kind + '.' + this.statistic;
-                return point.metrics ? point.metrics[key] : null;
+            if (this.valueKey) {
+                return point.metrics ? point.metrics[this.valueKey] : null;
             }
             return point.y;
         }
 
         yLabel() {
-            if (this.chart.kind !== 'analytical') {
-                return this.chart.ylabel;
-            }
-            const statistic = statistics.find(item => item[0] === this.statistic)[1];
-            return statistic + ' · 归一化误差 [%]';
+            const option = this.valueOptions.find(item => item.key === this.valueKey);
+            return option ? option.ylabel : this.chart.ylabel;
         }
 
         tooltip(params) {
@@ -181,7 +183,8 @@
                     return [point.x, plotted];
                 });
                 return {
-                    name: this.name(index), type: 'line', data, connectNulls: false,
+                    name: this.name(index), type: source.renderer || this.chart.renderer || 'line',
+                    data, connectNulls: false,
                     smooth: false, showSymbol: true, symbol: 'circle', symbolSize: 3,
                     sampling: 'none', animation: false,
                     lineStyle: {width: 1.6, type: source.reference ? 'dashed' : 'solid'},
@@ -191,15 +194,22 @@
             const yAxis = {
                 type: this.log ? 'log' : 'value', logBase: 10, name: this.yLabel(),
                 nameLocation: 'middle', nameGap: 66, scale: true,
-                axisLabel: {formatter: format}, splitLine: {lineStyle: {color: '#e2e9ef'}}
+                axisLabel: {formatter: format}, splitLine: {lineStyle: {color: '#e2e9ef'}},
+                splitNumber: this.axisSplitNumber(dataMin, dataMax)
             };
             if (this.log) {
+                yAxis.minorTick = {show: true, splitNumber: 5};
+                yAxis.minorSplitLine = {show: true, lineStyle: {color: '#f0f4f7'}};
                 if (positiveMin === Infinity) {
                     yAxis.min = 0.1;
                     yAxis.max = 1;
                 } else {
-                    yAxis.min = 10 ** (Math.floor(Math.log10(positiveMin)) - 0.05);
-                    yAxis.max = 10 ** (Math.ceil(Math.log10(positiveMax)) + 0.05);
+                    yAxis.min = 10 ** Math.floor(Math.log10(positiveMin));
+                    yAxis.max = 10 ** Math.ceil(Math.log10(positiveMax));
+                    if (yAxis.min === yAxis.max) {
+                        yAxis.min /= 10;
+                        yAxis.max *= 10;
+                    }
                 }
             } else if (dataMin !== Infinity) {
                 const span = dataMax - dataMin;
@@ -235,6 +245,19 @@
             }, {notMerge: true});
             this.mode(false);
             this.updateNote();
+        }
+
+        axisSplitNumber(minimum, maximum) {
+            const height = this.plot ? this.plot.clientHeight : 460;
+            const budget = Math.max(3, Math.min(9, Math.floor(height / 64)));
+            if (!finite(minimum) || !finite(maximum) || minimum === maximum) {
+                return 3;
+            }
+            if (!this.log) {
+                return budget;
+            }
+            const decades = Math.abs(Math.log10(maximum) - Math.log10(minimum));
+            return Math.max(2, Math.min(budget, Math.ceil(decades)));
         }
 
         updateNote() {
@@ -309,15 +332,167 @@
             this.table = table;
             this.host = host;
             this.columns = Array.from(table.tHead.rows[0].cells).map(cell => ({
-                key: cell.dataset.key, label: cell.textContent, type: cell.dataset.type
+                key: cell.dataset.key,
+                label: cell.textContent.trim(),
+                type: cell.dataset.type,
+                sortType: cell.dataset.sortType,
+                sortable: cell.dataset.sortable === 'true',
+                cell
             })).filter(column => column.key !== '_index');
             this.body = table.tBodies[0];
             this.rows = Array.from(this.body.rows);
+            this.rows.forEach((row, index) => {
+                row.dataset.originalIndex = String(index);
+            });
+            this.visibleRows = [...this.rows];
+            this.sorts = [];
+            this.sortButtons = [];
+            this.buildSortControls();
             this.build();
         }
+
+        buildSortControls() {
+            this.columns.filter(column => column.sortable).forEach(column => {
+                const label = element('span', column.label, null, {class: 'column-label'});
+                const controls = element('span', null, null, {
+                    class: 'sort-controls', role: 'group', 'aria-label': column.label + '排序'
+                });
+                for (const direction of ['asc', 'desc']) {
+                    const action = direction === 'asc' ? '从小到大排序' : '从大到小排序';
+                    const button = element('button', null, controls, {
+                        type: 'button', class: 'sort-button', 'data-sort-key': column.key,
+                        'data-sort-direction': direction, 'aria-label': column.label + action,
+                        'aria-pressed': 'false', title: action
+                    });
+                    const points = direction === 'asc' ? '8,3 14,13 2,13' : '2,3 14,3 8,13';
+                    button.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><polygon points="'
+                        + points + '"></polygon></svg>';
+                    button.onclick = () => this.toggleSort(column, direction);
+                    this.sortButtons.push({button, column, direction});
+                }
+                const head = element('span', null, null, {class: 'column-head'});
+                head.append(label, controls);
+                column.cell.replaceChildren(head);
+            });
+        }
+
+        toggleSort(column, direction) {
+            const index = this.sorts.findIndex(sort => sort.key === column.key);
+            if (index >= 0 && this.sorts[index].direction === direction) {
+                this.sorts.splice(index, 1);
+            } else if (index >= 0) {
+                this.sorts[index].direction = direction;
+            } else if (this.canAppendSort()) {
+                this.sorts.push({key: column.key, direction, type: column.sortType});
+            }
+            this.renderRows();
+        }
+
+        canAppendSort() {
+            if (!this.sorts.length) {
+                return true;
+            }
+            if (this.visibleRows.length < 2) {
+                return false;
+            }
+            const ordered = [...this.visibleRows].sort((left, right) => this.compareSortKeys(left, right));
+            for (let index = 1; index < ordered.length; index++) {
+                if (this.compareSortKeys(ordered[index - 1], ordered[index]) === 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        data(row) {
+            if (!row._simtestValues) {
+                row._simtestValues = JSON.parse(row.dataset.values);
+            }
+            return row._simtestValues;
+        }
+
+        missing(value, type) {
+            if (value == null || value === '') {
+                return true;
+            }
+            return type === 'number' && !Number.isFinite(Number(value));
+        }
+
+        baseComparison(left, right, type) {
+            if (type === 'number') {
+                return Number(left) - Number(right);
+            }
+            if (type === 'status') {
+                const leftRank = Object.prototype.hasOwnProperty.call(statusOrder, left) ? statusOrder[left] : 100;
+                const rightRank = Object.prototype.hasOwnProperty.call(statusOrder, right) ? statusOrder[right] : 100;
+                return leftRank - rightRank || collator.compare(String(left), String(right));
+            }
+            return collator.compare(String(left), String(right));
+        }
+
+        compareValues(left, right, type, direction) {
+            const leftMissing = this.missing(left, type);
+            const rightMissing = this.missing(right, type);
+            if (leftMissing || rightMissing) {
+                if (leftMissing && rightMissing) {
+                    return 0;
+                }
+                return leftMissing ? 1 : -1;
+            }
+            const value = this.baseComparison(left, right, type);
+            return direction === 'desc' ? -value : value;
+        }
+
+        compareSortKeys(leftRow, rightRow) {
+            const left = this.data(leftRow);
+            const right = this.data(rightRow);
+            for (const sort of this.sorts) {
+                const value = this.compareValues(left[sort.key], right[sort.key], sort.type, sort.direction);
+                if (value !== 0) {
+                    return value;
+                }
+            }
+            return 0;
+        }
+
+        compareRows(left, right) {
+            const value = this.compareSortKeys(left, right);
+            if (value !== 0) {
+                return value;
+            }
+            return Number(left.dataset.originalIndex) - Number(right.dataset.originalIndex);
+        }
+
+        updateSortControls() {
+            const canAppend = this.canAppendSort();
+            this.sortButtons.forEach(({button, column, direction}) => {
+                const priority = this.sorts.findIndex(sort => sort.key === column.key);
+                const active = priority >= 0 && this.sorts[priority].direction === direction;
+                button.setAttribute('aria-pressed', String(active));
+                button.dataset.priority = priority >= 0 ? String(priority + 1) : '';
+                button.disabled = priority < 0 && !canAppend;
+                if (button.disabled) {
+                    button.title = '前置排序已无相同值，无需追加排序';
+                } else if (priority >= 0) {
+                    button.title = '排序优先级 ' + (priority + 1) + '；再次点击已选方向可取消';
+                } else {
+                    button.title = direction === 'asc' ? '从小到大排序' : '从大到小排序';
+                }
+            });
+        }
+
+        renderRows() {
+            const visible = [...this.visibleRows].sort((left, right) => this.compareRows(left, right));
+            this.body.replaceChildren(...visible);
+            visible.forEach((row, index) => {
+                row.cells[0].textContent = String(index + 1);
+            });
+            this.updateSortControls();
+        }
+
         build() {
             const box = element('div', null, this.host, {class: 'filter'});
-            const toggle = element('button', null, box, {type: 'button', class: 'filter-toggle', title: '筛选 / 排序'});
+            const toggle = element('button', null, box, {type: 'button', class: 'filter-toggle', title: '筛选'});
             toggle.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3 5h18l-7 8v6l-4 2v-8L3 5z"/></svg>';
             const panel = element('div', null, box, {class: 'filter-panel'});
             panel.hidden = true;
@@ -343,6 +518,7 @@
             element('button', '应用', actions, {type: 'button', class: 'primary'}).onclick = () => this.apply(mode.value, list);
             element('button', '重置', actions, {type: 'button'}).onclick = () => {
                 list.replaceChildren();
+                mode.value = 'all';
                 this.row(list);
                 this.apply('all', list);
             };
@@ -356,20 +532,6 @@
             this.columns.forEach(column => element('option', column.label, field, {value: column.key}));
             const operator = element('select', null, row);
             const input = element('input', null, row);
-            const order = element('select', null, row, {class: 'filter-order', title: '排序'});
-            element('option', '不排序', order, {value: ''});
-            element('option', '升序', order, {value: 'asc'});
-            element('option', '降序', order, {value: 'desc'});
-            order.onchange = () => {
-                if (!order.value) {
-                    return;
-                }
-                list.querySelectorAll('.filter-order').forEach(other => {
-                    if (other !== order) {
-                        other.value = '';
-                    }
-                });
-            };
             const update = () => {
                 operator.replaceChildren();
                 const type = this.columns.find(column => column.key === field.value).type;
@@ -391,12 +553,10 @@
                     key: selects[0].value,
                     op: selects[1].value,
                     value: row.querySelector('input').value,
-                    order: selects[2].value,
                     type: this.columns.find(column => column.key === selects[0].value).type
                 };
             });
             const filters = conditions.filter(item => item.value !== '');
-            const sorted = conditions.find(item => item.order);
             const test = (data, item) => {
                 const actual = data[item.key];
                 if (actual == null) {
@@ -419,37 +579,28 @@
                 if (item.op === 'ne') return String(actual) !== item.value;
                 return String(actual).includes(item.value);
             };
-            const visible = this.rows.filter(row => {
-                const data = JSON.parse(row.dataset.values);
+            this.visibleRows = this.rows.filter(row => {
+                const data = this.data(row);
                 if (!filters.length) {
                     return true;
                 }
                 const results = filters.map(item => test(data, item));
                 return mode === 'any' ? results.some(Boolean) : results.every(Boolean);
             });
-            if (sorted) {
-                const column = this.columns.find(item => item.key === sorted.key);
-                visible.sort((a, b) => {
-                    const left = JSON.parse(a.dataset.values)[sorted.key];
-                    const right = JSON.parse(b.dataset.values)[sorted.key];
-                    const value = column.type === 'number'
-                        ? Number(left) - Number(right)
-                        : String(left).localeCompare(String(right));
-                    return sorted.order === 'desc' ? -value : value;
-                });
-            }
-            this.body.replaceChildren(...visible);
-            visible.forEach((row, index) => { row.cells[0].textContent = String(index + 1); });
+            this.renderRows();
         }
     }
 
+    window.simtestDataTable = DataTable;
+    const tables = [];
     document.querySelectorAll('[data-table-id]').forEach(wrapper => {
         const table = wrapper.querySelector('table');
         const host = document.querySelector('[data-filter-for="' + wrapper.dataset.tableId + '"]');
         if (host && table) {
-            new DataTable(table, host);
+            tables.push(new DataTable(table, host));
         }
     });
+    window.simtestTables = tables;
 
     const sections = Array.from(document.querySelectorAll('[data-section]'));
     sections.forEach(section => {
@@ -484,15 +635,14 @@
     });
     syncFloating();
 
-    const groups = {residual: 'residual-charts', analytical: 'analytical-charts', monitor: 'monitor-charts'};
     const flat = [];
-    Object.keys(groups).forEach(kind => {
-        const container = document.getElementById(groups[kind]);
-        charts.filter(chart => chart.kind === kind).forEach(chart => {
+    charts.forEach(chart => {
+        const group = chart.group && chart.group.id;
+        const container = Array.from(document.querySelectorAll('[data-chart-group]')).find(
+            candidate => candidate.dataset.chartGroup === group
+        );
+        if (container) {
             flat.push(new Chart(chart, container));
-        });
-        if (!container.children.length) {
-            container.closest('section').classList.add('empty');
         }
     });
     window.simtestCharts = flat;

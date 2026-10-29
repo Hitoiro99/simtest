@@ -306,22 +306,21 @@ def build_charts(runs):
             declaration = m["case"]["monitors"].get(name, {})
             unit = declaration.get("unit", "1")
             residual = is_residual(name, declaration)
-            if not residual:
-                experimental = any(
-                    reference.get("kind") == "experimental" and reference.get("monitor") == name
-                    for reference in m.get("condition", {}).get("references", {}).values()
-                )
-                if not experimental:
-                    continue
             selected = records
             if not selected:
                 continue
             kind = "residual" if residual else "monitor"
+            if residual:
+                group = {"id": "residual", "title": "残差图像", "order": 10}
+            else:
+                group = {"id": "monitor", "title": "监控量图像", "order": 30}
             key = (kind, name, unit)
             chart = charts.setdefault(
                 key,
                 {
                     "kind": kind,
+                    "renderer": "line",
+                    "group": group,
                     "title": name,
                     "description": declaration.get("display_name", name),
                     "unit": unit,
@@ -369,12 +368,32 @@ def build_charts(runs):
             )
             chart = charts.setdefault(key, {
                 "kind": "analytical",
+                "renderer": "line",
+                "group": {"id": "analytical", "title": "解析解归一化误差", "order": 20},
                 "title": " / ".join(
                     (condition_name(m), row["domain"], row["field"], row["component"], "解析解归一化偏差")
                 ),
                 "description": "按实际保存迭代步比较；均值和 RMS 按单元体积加权。",
                 "unit": key[5], "component": row["component"], "error_kind": error_kind,
                 "xlabel": "Step", "ylabel": "归一化误差 [%]", "yscale": "linear", "series": [],
+                "value_options": [
+                    {
+                        "key": error_kind + ".max",
+                        "label": "最大值",
+                        "ylabel": "最大值 · 归一化误差 [%]",
+                    },
+                    {
+                        "key": error_kind + ".mean",
+                        "label": "体积加权平均值",
+                        "ylabel": "体积加权平均值 · 归一化误差 [%]",
+                    },
+                    {
+                        "key": error_kind + ".rms",
+                        "label": "体积加权 RMS",
+                        "ylabel": "体积加权 RMS · 归一化误差 [%]",
+                    },
+                ],
+                "default_value": error_kind + ".max",
             })
             series_label = label(m)
             series = next((s for s in chart["series"] if s["label"] == series_label), None)
@@ -516,16 +535,32 @@ def static_figures(destination, charts):
     figures.mkdir()
     result = []
     for chart in charts:
+        value_key = chart.get("default_value")
+        value_option = next(
+            (option for option in chart.get("value_options", []) if option["key"] == value_key), None
+        )
         fig, ax = plt.subplots(figsize=(10, 5.5))
         for series in chart["series"]:
+            if value_key:
+                values = [p.get("metrics", {}).get(value_key) for p in series["points"]]
+            else:
+                values = [p["y"] for p in series["points"]]
             ax.plot(
                 [p["x"] for p in series["points"]],
-                [p["y"] for p in series["points"]],
+                values,
                 label=series["label"],
                 linewidth=1.2,
                 linestyle="--" if series.get("reference") else "-",
             )
-        values = [p["y"] for s in chart["series"] for p in s["points"] if p["y"] is not None]
+        if value_key:
+            values = [
+                p.get("metrics", {}).get(value_key)
+                for series in chart["series"]
+                for p in series["points"]
+                if p.get("metrics", {}).get(value_key) is not None
+            ]
+        else:
+            values = [p["y"] for s in chart["series"] for p in s["points"] if p["y"] is not None]
         if chart.get("yscale") == "log":
             ax.set_yscale("log", nonpositive="mask")
             ax.yaxis.set_major_formatter(ticker.FuncFormatter(log_tick_label))
@@ -536,7 +571,7 @@ def static_figures(destination, charts):
             if hi - lo < minimum:
                 ax.set_ylim((lo + hi - minimum) / 2, (lo + hi + minimum) / 2)
         ax.set_xlabel(chart["xlabel"])
-        ax.set_ylabel(chart["ylabel"])
+        ax.set_ylabel(value_option["ylabel"] if value_option else chart["ylabel"])
         ax.grid(alpha=0.25)
         ax.legend(fontsize=6)
         fig.tight_layout()
@@ -555,9 +590,31 @@ def escaped(value):
     return html.escape(str(value), quote=True)
 
 
+def chart_sections(charts):
+    """Return ordered report sections declared by the generated chart descriptions."""
+    sections = {}
+    for chart in charts:
+        group = chart.get("group") or {}
+        group_id = group.get("id") or chart.get("kind") or "other"
+        if group_id not in sections:
+            sections[group_id] = {
+                "id": group_id,
+                "title": group.get("title") or group_id,
+                "order": group.get("order", 100),
+            }
+    return sorted(sections.values(), key=lambda section: (section["order"], section["id"]))
+
+
 def table(columns, rows, table_id):
     head = "".join(
-        '<th data-key="%s" data-type="%s">%s</th>' % (column["key"], column["type"], escaped(column["label"]))
+        '<th data-key="%s" data-type="%s" data-sort-type="%s" data-sortable="%s">%s</th>'
+        % (
+            column["key"],
+            column["type"],
+            column.get("sort_type", column["type"]),
+            "true" if column.get("sortable", True) else "false",
+            escaped(column["label"]),
+        )
         for column in columns
     )
     body = []
@@ -590,7 +647,7 @@ def table(columns, rows, table_id):
 
 
 JOB_COLUMNS = [
-    {"key": "_index", "label": "序号", "type": "index"},
+    {"key": "_index", "label": "序号", "type": "index", "sortable": False},
     {"key": "condition", "label": "工况", "type": "text"},
     {"key": "processes", "label": "进程数", "type": "number"},
     {"key": "solver", "label": "求解器", "type": "text"},
@@ -598,25 +655,25 @@ JOB_COLUMNS = [
     {"key": "wall_seconds", "label": "墙钟 / s", "type": "number"},
     {"key": "cpu_seconds", "label": "CPU / s", "type": "number"},
     {"key": "peak_memory_bytes", "label": "峰值内存 / byte", "type": "number"},
-    {"key": "job_id", "label": "作业 ID", "type": "text"},
+    {"key": "job_id", "label": "作业 ID", "type": "text", "sortable": False},
 ]
 
 MONITOR_COLUMNS = [
-    {"key": "_index", "label": "序号", "type": "index"},
+    {"key": "_index", "label": "序号", "type": "index", "sortable": False},
     {"key": "condition", "label": "工况", "type": "text"},
     {"key": "processes", "label": "进程数", "type": "number"},
     {"key": "solver", "label": "求解器", "type": "text"},
     {"key": "monitor", "label": "监控量", "type": "text"},
     {"key": "last_step", "label": "最后步", "type": "number"},
-    {"key": "last_value", "label": "最后值", "type": "text"},
-    {"key": "reference_value", "label": "参考值", "type": "text"},
+    {"key": "last_value", "label": "最后值", "type": "text", "sort_type": "number"},
+    {"key": "reference_value", "label": "参考值", "type": "text", "sort_type": "number"},
     {"key": "normalized_error_percent", "label": "归一化误差 / %", "type": "number"},
     {"key": "comparison_status", "label": "比较状态", "type": "status"},
-    {"key": "job_id", "label": "作业 ID", "type": "text"},
+    {"key": "job_id", "label": "作业 ID", "type": "text", "sortable": False},
 ]
 
 FIELD_COLUMNS = [
-    {"key": "_index", "label": "序号", "type": "index"},
+    {"key": "_index", "label": "序号", "type": "index", "sortable": False},
     {"key": "condition", "label": "工况", "type": "text"},
     {"key": "processes", "label": "进程数", "type": "number"},
     {"key": "solver", "label": "求解器", "type": "text"},
@@ -627,7 +684,7 @@ FIELD_COLUMNS = [
     {"key": "mean_percent", "label": "平均 / %", "type": "number"},
     {"key": "rms_percent", "label": "RMS / %", "type": "number"},
     {"key": "status", "label": "状态", "type": "status"},
-    {"key": "job_id", "label": "作业 ID", "type": "text"},
+    {"key": "job_id", "label": "作业 ID", "type": "text", "sortable": False},
 ]
 
 
@@ -738,4 +795,5 @@ def render_html(case_id, created, runs, charts, rows, figures, destination):
         jobs_table=table(JOB_COLUMNS, job_rows(runs), "jobs"),
         monitors_table=table(MONITOR_COLUMNS, monitor_rows_data, "monitors"),
         fields_table=table(FIELD_COLUMNS, field_rows_data, "fields"),
+        chart_sections=chart_sections(charts),
     )

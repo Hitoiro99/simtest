@@ -12,6 +12,7 @@ from simtest import parser
 from platform_support.io import atomic_json, inventory
 from report import (
     build_charts,
+    chart_sections,
     execution_label,
     field_step,
     final_field_rows,
@@ -96,6 +97,15 @@ class ReportTests(unittest.TestCase):
         self.assertEqual([point["x"] for point in charts[0]["series"][0]["points"]], [0, 1, 2])
         self.assertEqual(monitor_rows("example", runs)[0]["last_value"], "inf")
 
+    def test_every_actual_monitor_gets_a_data_driven_chart_section(self):
+        manifest = fixture()
+        charts = build_charts([(Path("archive"), manifest, {"status": "SUCCEEDED"})])
+        self.assertEqual(len(charts), 1)
+        self.assertEqual(charts[0]["kind"], "monitor")
+        self.assertEqual(charts[0]["renderer"], "line")
+        self.assertEqual(charts[0]["group"]["id"], "monitor")
+        self.assertEqual(chart_sections(charts), [{"id": "monitor", "title": "监控量图像", "order": 30}])
+
     def test_latest_version_uses_solver_rule_without_installation(self):
         runs = []
         for version in ("2025R2", "2026R1", "2025R1"):
@@ -161,7 +171,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual([p["x"] for p in points], [0, 1, 2])
         self.assertEqual(points[0]["metrics"]["normalized_error.mean"], 1)
         self.assertNotIn("absolute_error.mean", points[0]["metrics"])
-        self.assertFalse(any(chart["kind"] == "monitor" for chart in charts))
+        self.assertTrue(any(chart["kind"] == "monitor" for chart in charts))
 
     def test_components_and_error_types_have_independent_charts(self):
         manifest = fixture()
@@ -176,7 +186,12 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(len(fields), 4)
         self.assertEqual({(chart["component"], chart["error_kind"]) for chart in fields},
                          {(component, "normalized_error") for component in ("x", "y", "z", "magnitude")})
-        self.assertFalse(any(chart["kind"] == "monitor" for chart in charts))
+        self.assertTrue(any(chart["kind"] == "monitor" for chart in charts))
+        self.assertEqual(fields[0]["default_value"], "normalized_error.max")
+        self.assertEqual(
+            [option["key"] for option in fields[0]["value_options"]],
+            ["normalized_error.max", "normalized_error.mean", "normalized_error.rms"],
+        )
 
     def test_field_step_uses_verified_time_metadata_and_final_summary(self):
         manifest = fixture()
@@ -235,6 +250,9 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn("完整数值", page)
         self.assertNotIn("absolute_error", page)
         self.assertNotIn("table-filter", page)
+        self.assertIn('data-chart-group="monitor"', page)
+        self.assertNotIn('class="filter-order"', page)
+        self.assertIn('data-sortable="false">作业 ID</th>', page)
 
     def test_report_checks_selection_integrity_and_outputs_html(self):
         with tempfile.TemporaryDirectory() as temp:

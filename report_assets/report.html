@@ -15,7 +15,7 @@
             <button type="button" id="expand-all">全部展开</button>
             <button type="button" id="collapse-all">全部收起</button>
         </div>
-        <nav><a href="#jobs">作业状态</a><a href="#residual">残差</a><a href="#analytical">解析解</a><a href="#monitor">监控量</a><a href="#final">最后值</a><a href="#sources">追溯与下载</a></nav>
+        <nav><a href="#jobs">作业状态</a>{% for group in chart_sections %}<a href="#{{ group.id }}">{{ group.title }}</a>{% endfor %}<a href="#final">最后值</a><a href="#sources">追溯与下载</a></nav>
     </header>
     <main>
         <div class="notice">SUCCEEDED 表示执行和必需结果完整，不代表收敛或数值通过。归一化尺度不是验收容差。</div>
@@ -27,18 +27,12 @@
             </div>
             <div class="panel-body">{{ jobs_table | safe }}</div>
         </section>
-        <section id="residual" class="panel" data-section>
-            <div class="panel-head"><h2>残差图像</h2><button type="button" class="section-toggle" aria-expanded="true"></button></div>
-            <div class="panel-body"><div id="residual-charts" class="chart-list"></div></div>
+        {% for group in chart_sections %}
+        <section id="{{ group.id }}" class="panel" data-section data-chart-section="{{ group.id }}">
+            <div class="panel-head"><h2>{{ group.title }}</h2><button type="button" class="section-toggle" aria-expanded="true"></button></div>
+            <div class="panel-body"><div class="chart-list" data-chart-group="{{ group.id }}"></div></div>
         </section>
-        <section id="analytical" class="panel" data-section>
-            <div class="panel-head"><h2>解析解归一化误差</h2><button type="button" class="section-toggle" aria-expanded="true"></button></div>
-            <div class="panel-body"><div id="analytical-charts" class="chart-list"></div></div>
-        </section>
-        <section id="monitor" class="panel" data-section>
-            <div class="panel-head"><h2>监控量图像</h2><button type="button" class="section-toggle" aria-expanded="true"></button></div>
-            <div class="panel-body"><div id="monitor-charts" class="chart-list"></div></div>
-        </section>
+        {% endfor %}
         <section id="final" class="panel" data-section>
             <div class="panel-head"><h2>最后值</h2><button type="button" class="section-toggle" aria-expanded="true"></button></div>
             <div class="panel-body">

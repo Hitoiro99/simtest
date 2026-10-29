@@ -118,13 +118,15 @@ async function main() {
         assert.equal(await evaluate('window.simtestCharts.length'), charts.length);
         assert.equal(await evaluate('document.querySelectorAll(".chart").length'), charts.length);
         assert.equal(await evaluate('echarts.version'), '5.6.0');
-        assert.ok(charts.every(chart => ['analytical', 'monitor', 'residual'].includes(chart.kind)),
-            'Only analytical, monitor and residual charts are allowed');
+        assert.ok(charts.every(chart => chart.group && chart.group.id && chart.renderer),
+            'Every chart must declare its renderer and report group');
         assert.ok(charts.every(chart => /Step/.test(chart.xlabel)), 'Every chart must use the step axis');
         const fieldCharts = charts.filter(chart => chart.kind === 'analytical');
         assert.ok(fieldCharts.length > 0, 'Use a report containing field comparisons');
-        assert.equal(charts.filter(chart => chart.kind === 'monitor').length, 0,
-            'Analytical and monitor charts must not coexist');
+        assert.ok(charts.some(chart => chart.kind === 'monitor'),
+            'Every actual non-residual monitor must be charted even without a reference');
+        assert.equal(await evaluate('document.querySelectorAll("[data-chart-group]").length'),
+            new Set(charts.map(chart => chart.group.id)).size);
         for (const chart of fieldCharts) {
             assert.ok(chart.component, 'Each field chart must identify one component');
             assert.equal(chart.error_kind, 'normalized_error');
@@ -152,6 +154,8 @@ async function main() {
         assert.equal(initial.xAxis[0].type, 'value');
         assert.match(initial.xAxis[0].name, /Step|步/);
         assert.equal(initial.yAxis[0].type, 'log');
+        assert.ok(initial.yAxis[0].splitNumber >= 2 && initial.yAxis[0].splitNumber <= 9);
+        assert.equal(initial.yAxis[0].minorTick.show, true);
         for (const series of residual.series.filter(item => !item.reference)) {
             assert.equal(series.points.length, 200, 'Regression sample must retain all 200 steps');
             assert.equal(series.points[0].x, 1);
@@ -193,7 +197,59 @@ async function main() {
         assert.equal(await evaluate('document.querySelectorAll(".filter-toggle").length'), 3,
             'Each table needs one filter');
         assert.equal(await evaluate('document.querySelectorAll("[data-table-id]").length'), 3);
+        assert.equal(await evaluate('document.querySelectorAll(".filter-order").length'), 0,
+            'Sorting must not remain in the filter panel');
+        assert.equal(await evaluate('document.querySelectorAll("th[data-key=job_id] .sort-button").length'), 0,
+            'Job IDs must not expose meaningless sorting controls');
+        assert.ok(await evaluate('document.querySelectorAll("th[data-sortable=true] .sort-button").length > 0'));
         assert.equal(await evaluate('document.querySelector("#jobs tbody tr td").textContent'), '1');
+        const sorting = await evaluate(`(() => {
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = '<table><thead><tr>'
+                + '<th data-key="_index" data-type="index" data-sort-type="index" data-sortable="false">序号</th>'
+                + '<th data-key="group" data-type="text" data-sort-type="text" data-sortable="true">分组</th>'
+                + '<th data-key="value" data-type="number" data-sort-type="number" data-sortable="true">值</th>'
+                + '<th data-key="unique" data-type="number" data-sort-type="number" data-sortable="true">唯一值</th>'
+                + '<th data-key="job_id" data-type="text" data-sort-type="text" data-sortable="false">作业 ID</th>'
+                + '</tr></thead><tbody></tbody></table>';
+            const values = [
+                {group: 'A', value: 2, unique: 4, job_id: 'd'},
+                {group: 'B', value: 2, unique: 2, job_id: 'b'},
+                {group: 'A', value: 1, unique: 3, job_id: 'c'},
+                {group: 'B', value: 1, unique: 1, job_id: 'a'}
+            ];
+            const body = wrapper.querySelector('tbody');
+            values.forEach(value => {
+                const row = document.createElement('tr');
+                row.dataset.values = JSON.stringify(value);
+                row.innerHTML = '<td></td><td>' + value.group + '</td><td>' + value.value
+                    + '</td><td>' + value.unique + '</td><td>' + value.job_id + '</td>';
+                body.append(row);
+            });
+            const host = document.createElement('div');
+            const table = new window.simtestDataTable(wrapper.querySelector('table'), host);
+            const click = (key, direction) => wrapper.querySelector(
+                '[data-sort-key="' + key + '"][data-sort-direction="' + direction + '"]'
+            ).click();
+            const order = () => Array.from(body.rows).map(row => JSON.parse(row.dataset.values).job_id).join('');
+            click('group', 'asc');
+            click('value', 'asc');
+            const multi = order();
+            const priorities = table.sorts.map(sort => sort.key + ':' + sort.direction).join(',');
+            click('value', 'desc');
+            const switched = order();
+            const switchedPriorities = table.sorts.map(sort => sort.key + ':' + sort.direction).join(',');
+            click('value', 'desc');
+            const cancelled = table.sorts.map(sort => sort.key).join(',');
+            click('group', 'asc');
+            click('unique', 'asc');
+            const disabled = Array.from(wrapper.querySelectorAll('.sort-button')).filter(button => button.disabled).length;
+            return {multi, priorities, switched, switchedPriorities, cancelled, disabled};
+        })()`);
+        assert.deepEqual(sorting, {
+            multi: 'cdab', priorities: 'group:asc,value:asc', switched: 'dcba',
+            switchedPriorities: 'group:asc,value:desc', cancelled: 'group', disabled: 4
+        });
         await evaluate('document.querySelector("#jobs h2").click()');
         assert.equal(await evaluate('document.querySelector("#jobs").classList.contains("collapsed")'), true);
         await evaluate('document.getElementById("expand-all").click()');
@@ -242,9 +298,11 @@ async function main() {
         const metricOptions = await evaluate(
             'Array.from(' + fieldState + '.card.querySelector("select[aria-label=误差统计量]").options).map(o=>o.value)'
         );
-        assert.deepEqual(metricOptions, ['max', 'mean', 'rms']);
+        assert.deepEqual(metricOptions, [
+            'normalized_error.max', 'normalized_error.mean', 'normalized_error.rms'
+        ]);
         const rms = charts[fieldIndex].error_kind + '.rms';
-        assert.ok(metricOptions.includes('rms'));
+        assert.ok(metricOptions.includes(rms));
         await evaluate(
             '(()=>{const s=' + fieldState + '.card.querySelector("select[aria-label=误差统计量]");s.value='
             + JSON.stringify('rms') + ';s.dispatchEvent(new Event("change"))})()'
@@ -252,7 +310,7 @@ async function main() {
         const plotted = await evaluate(fieldState + '.instance.getOption().series[0].data');
         const expected = charts[fieldIndex].series[0].points.map(point => point.metrics[rms]);
         assert.deepEqual(plotted.map(point => Array.isArray(point) ? point[1] : point.value[1]), expected);
-        assert.ok(await evaluate('document.querySelectorAll("#results tbody tr").length > 0'));
+        assert.ok(await evaluate('document.querySelectorAll("#final tbody tr").length > 0'));
         assert.equal(await evaluate('document.getElementById("table-filter")'), null);
         await click('fullscreen');
         assert.ok(await evaluate('document.fullscreenElement!==null'));
@@ -285,8 +343,9 @@ async function main() {
         assert.deepEqual(networkRequests, [], 'Offline report attempted external network requests');
         console.log(JSON.stringify({
             report, charts: charts.length,
-            checks: ['offline ECharts', 'three chart kinds', 'step axes', 'normalized analytical errors',
+            checks: ['offline ECharts', 'data-driven chart groups', 'step axes', 'normalized analytical errors',
                 'final-step tables', 'all residual steps', 'step/log defaults',
+                'adaptive y-axis ticks', 'header multi-sort',
                 'button zoom', 'box zoom', 'pan', 'wheel zoom', 'reset', 'tail view', 'legend', 'axis switch',
                 'hover', 'metric selection', 'fullscreen', 'SVG export', 'mobile width'],
             javascriptErrors: errors.length, externalRequests: networkRequests.length
