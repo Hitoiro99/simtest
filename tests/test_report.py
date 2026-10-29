@@ -42,6 +42,36 @@ def fixture():
     }
 
 
+def experimental_comparison(step, normalized_error, status="AVAILABLE", time=None, monitor="u", reference_id="exp"):
+    return {
+        "reference_id": reference_id,
+        "kind": "experimental",
+        "monitor": monitor,
+        "step": step,
+        "time": time,
+        "reference_value": 1,
+        "normalized_error": normalized_error,
+        "status": status,
+        "unit": "m/s",
+    }
+
+
+def field_comparison(condition="Re=10", **updates):
+    row = {
+        "domain": "rotor/zone",
+        "field": "total_temperature",
+        "component": "scalar",
+        "reference_id": "formula-α",
+        "time": 0,
+        "unit": "K",
+        "status": "AVAILABLE",
+        "absolute_error": {"max": 1, "mean": 0.5, "rms": 0.75},
+        "normalized_error": {"max": 0.1, "mean": 0.05, "rms": 0.075},
+    }
+    row.update(updates)
+    return row
+
+
 def stored_fixture(root, label="job-a"):
     manifest = fixture()
     manifest["identity"]["fixture"] = label
@@ -88,23 +118,103 @@ class ReportTests(unittest.TestCase):
         m = fixture()
         m["condition"] = {"references": {"exp": {"kind": "experimental", "monitor": "u"}}}
         m["monitors"]["u"].append({"step": 2, "time": None, "value": "inf"})
+        m["comparisons"]["monitors"] = [
+            experimental_comparison(0, 0, time=0),
+            experimental_comparison(1, None, status="UNAVAILABLE", time=1),
+            experimental_comparison(2, None, status="UNAVAILABLE"),
+        ]
         runs = [(Path("archive"), m, {"status": "SUCCEEDED"})]
         charts = build_charts(runs)
         self.assertEqual(len(charts), 1)
         self.assertEqual(charts[0]["series"][0]["points"][1]["y"], None)
-        self.assertEqual(charts[0]["series"][0]["points"][1]["raw"], "nan")
+        self.assertEqual(charts[0]["series"][0]["points"][1]["raw"], "UNAVAILABLE")
         self.assertEqual(charts[0]["xlabel"], "Step")
         self.assertEqual([point["x"] for point in charts[0]["series"][0]["points"]], [0, 1, 2])
         self.assertEqual(monitor_rows("example", runs)[0]["last_value"], "inf")
 
-    def test_every_actual_monitor_gets_a_data_driven_chart_section(self):
+    def test_monitor_chart_requires_an_experimental_reference(self):
         manifest = fixture()
+        self.assertEqual(build_charts([(Path("archive"), manifest, {"status": "SUCCEEDED"})]), [])
+        manifest["condition"] = {"references": {"exp": {"kind": "experimental", "monitor": "u"}}}
+        manifest["comparisons"]["monitors"] = [
+            experimental_comparison(0, 0), experimental_comparison(1, None, status="UNAVAILABLE")
+        ]
         charts = build_charts([(Path("archive"), manifest, {"status": "SUCCEEDED"})])
         self.assertEqual(len(charts), 1)
         self.assertEqual(charts[0]["kind"], "monitor")
         self.assertEqual(charts[0]["renderer"], "line")
         self.assertEqual(charts[0]["group"]["id"], "monitor")
-        self.assertEqual(chart_sections(charts), [{"id": "monitor", "title": "监控量图像", "order": 30}])
+        self.assertEqual(
+            chart_sections(charts), [{"id": "monitor", "title": "实验参考值归一化偏差", "order": 30}]
+        )
+        with self.assertRaises(ConfigurationError):
+            chart_sections([{"kind": "unexpected"}])
+
+    def test_experimental_error_has_condition_priority_and_preserves_other_conditions(self):
+        experimental = fixture()
+        experimental["condition"] = {"references": {"exp": {"kind": "experimental", "monitor": "u"}}}
+        experimental["comparisons"]["monitors"] = [
+            experimental_comparison(0, None, status="UNAVAILABLE"),
+            experimental_comparison(1, None, status="UNAVAILABLE"),
+        ]
+        experimental["comparisons"]["fields"] = [field_comparison()]
+
+        analytical = fixture()
+        analytical["job_id"] = "job-b"
+        analytical["identity"]["condition"] = "Mach=0.85"
+        analytical["comparisons"]["fields"] = [field_comparison(condition="Mach=0.85")]
+
+        runs = [
+            (Path("experimental"), experimental, {"status": "SUCCEEDED"}),
+            (Path("analytical"), analytical, {"status": "SUCCEEDED"}),
+        ]
+        charts = build_charts(runs)
+        monitor = [chart for chart in charts if chart["kind"] == "monitor"]
+        fields = [chart for chart in charts if chart["kind"] == "analytical"]
+        self.assertEqual(len(monitor), 1)
+        self.assertEqual([point["y"] for point in monitor[0]["series"][0]["points"]], [None, None])
+        self.assertEqual(monitor[0]["path"], ["Re=10", "u", "exp", "实验参考值归一化偏差"])
+        self.assertEqual(len(fields), 1)
+        self.assertEqual(fields[0]["path"], [
+            "Mach=0.85", "rotor/zone", "total_temperature", "formula-α", "scalar", "解析解归一化偏差"
+        ])
+        self.assertEqual({row["condition"] for row in final_field_rows(runs)}, {"Mach=0.85"})
+
+    def test_monitor_final_rows_keep_residual_plain_and_experimental(self):
+        manifest = fixture()
+        manifest["case"]["monitors"].update({
+            "residual_p": {"unit": "1", "mapping": [{"name": "residual:p"}]},
+            "mass_flow": {"unit": "kg/s"},
+        })
+        manifest["monitors"].update({
+            "residual_p": [{"step": 1, "time": 1, "value": 1e-4}],
+            "mass_flow": [{"step": 1, "time": 1, "value": 2.5}],
+        })
+        manifest["condition"] = {"references": {"exp": {"kind": "experimental", "monitor": "u"}}}
+        manifest["comparisons"]["monitors"] = [
+            experimental_comparison(0, 0.1), experimental_comparison(1, 0.2)
+        ]
+        runs = [(Path("archive"), manifest, {"status": "SUCCEEDED"})]
+        rows = monitor_rows("example", runs)
+        self.assertEqual({(row["monitor"], row["kind"]) for row in rows}, {
+            ("u", "experimental"), ("residual_p", "residual"), ("mass_flow", "monitor")
+        })
+        self.assertEqual(next(row for row in rows if row["monitor"] == "u")["normalized_error_percent"], 20)
+        page = render_html("example", "now", runs, build_charts(runs), rows, [], Path("report"))
+        self.assertIn("监控记录最终结果", page)
+        monitor_table = page.split('data-table-id="monitors"', 1)[1].split("</table>", 1)[0]
+        self.assertEqual(monitor_table.count("<tr data-values="), 3)
+
+    def test_chart_sections_and_paths_are_data_driven(self):
+        charts = [
+            {"kind": "custom", "group": {"id": "zeta", "title": "任意区段", "order": 8}},
+            {"kind": "other", "group": {"id": "alpha", "title": "先显示", "order": 2}},
+            {"kind": "custom", "group": {"id": "zeta", "title": "任意区段", "order": 8}},
+        ]
+        self.assertEqual(chart_sections(charts), [
+            {"id": "alpha", "title": "先显示", "order": 2},
+            {"id": "zeta", "title": "任意区段", "order": 8},
+        ])
 
     def test_latest_version_uses_solver_rule_without_installation(self):
         runs = []
@@ -113,6 +223,7 @@ class ReportTests(unittest.TestCase):
             manifest["job_id"] = "job-" + version
             manifest["actual_solver"] = {"name": "Fluent", "version": version}
             manifest["condition"] = {"references": {"exp": {"kind": "experimental", "monitor": "u"}}}
+            manifest["comparisons"]["monitors"] = [experimental_comparison(0, 0)]
             runs.append((Path("archive"), manifest, {"status": "SUCCEEDED"}))
 
         def fluent_version(name, version, branch=None):
@@ -171,7 +282,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual([p["x"] for p in points], [0, 1, 2])
         self.assertEqual(points[0]["metrics"]["normalized_error.mean"], 1)
         self.assertNotIn("absolute_error.mean", points[0]["metrics"])
-        self.assertTrue(any(chart["kind"] == "monitor" for chart in charts))
+        self.assertFalse(any(chart["kind"] == "monitor" for chart in charts))
 
     def test_components_and_error_types_have_independent_charts(self):
         manifest = fixture()
@@ -186,7 +297,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(len(fields), 4)
         self.assertEqual({(chart["component"], chart["error_kind"]) for chart in fields},
                          {(component, "normalized_error") for component in ("x", "y", "z", "magnitude")})
-        self.assertTrue(any(chart["kind"] == "monitor" for chart in charts))
+        self.assertFalse(any(chart["kind"] == "monitor" for chart in charts))
         self.assertEqual(fields[0]["default_value"], "normalized_error.max")
         self.assertEqual(
             [option["key"] for option in fields[0]["value_options"]],
@@ -235,11 +346,13 @@ class ReportTests(unittest.TestCase):
     def test_html_is_offline_and_escapes_archived_text(self):
         m = fixture()
         m["condition"] = {"references": {"exp": {"kind": "experimental", "monitor": "u"}}}
+        m["comparisons"]["monitors"] = [experimental_comparison(0, 0)]
         malicious = '</script><script>alert("injected")</script>'
         m["case"]["monitors"]["u"]["display_name"] = malicious
         status = {"status": "CRASHED", "diagnostics": [malicious]}
         runs = [(Path("archive"), m, status)]
         charts = build_charts([(Path("archive"), m, {"status": "SUCCEEDED"})])
+        charts[0]["description"] = malicious
         page = render_html("example", "now", runs, charts, monitor_rows("example", runs), [], Path("report"))
         self.assertNotIn(malicious, page)
         self.assertIn("&lt;/script&gt;", page)
@@ -307,8 +420,10 @@ class ReportTests(unittest.TestCase):
             summary = json.loads(Path(result["report"]).with_name("summary.json").read_text(encoding="utf-8"))
             derived = summary["runs"][0]["manifest"]
             self.assertEqual(derived["monitors"]["u"][-1]["step"], 1)
-            self.assertEqual(derived["comparisons"]["monitors"][0]["reference_value"], 1)
-            self.assertEqual(derived["comparisons"]["monitors"][0]["status"], "UNAVAILABLE")
+            self.assertEqual([row["reference_value"] for row in derived["comparisons"]["monitors"]], [1, 1])
+            self.assertEqual(
+                [row["status"] for row in derived["comparisons"]["monitors"]], ["AVAILABLE", "UNAVAILABLE"]
+            )
             self.assertEqual(derived["source_manifest"]["monitors"]["u"][0]["value"], 123456)
             self.assertIn("field_samples", derived)
             self.assertTrue(Path(result["report"]).with_name("monitors.csv").is_file())

@@ -37,13 +37,16 @@ def parse(unit):
     def visit(n):
         if isinstance(n, ast.Name) and n.id in BASE:
             return BASE[n.id]
+
         if isinstance(n, ast.Constant) and n.value == 1:
             return 1, (0, 0, 0, 0)
+
         if isinstance(n, ast.BinOp) and isinstance(n.op, (ast.Mult, ast.Div)):
             a, da = visit(n.left)
             b, db = visit(n.right)
             sign = 1 if isinstance(n.op, ast.Mult) else -1
             return a * (b**sign), tuple(x + sign * y for x, y in zip(da, db))
+
         if isinstance(n, ast.BinOp) and isinstance(n.op, ast.Pow):
             power = n.right
             sign = 1

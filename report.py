@@ -26,6 +26,13 @@ from solvers.exceptions import ConfigurationError, PostprocessError
 from solvers.registry import version_key
 
 
+CHART_SECTIONS = (
+    {"id": "residual", "title": "残差图像", "order": 10},
+    {"id": "analytical", "title": "解析解归一化误差", "order": 20},
+    {"id": "monitor", "title": "实验参考值归一化偏差", "order": 30},
+)
+
+
 def report_sources(root, case_id, job_ids=None):
     """Load selected terminal jobs, deriving observations from archived CSV/VTU."""
     requested = set(job_ids or [])
@@ -145,9 +152,9 @@ def write_report(destination, case_id, runs):
     figures = static_figures(destination, charts)
     rows = monitor_rows(case_id, runs)
     columns = [
-        "job_id", "case", "condition", "monitor", "solver", "version", "processes", "last_step", "last_time",
-        "last_value", "reference_id", "reference_value", "absolute_error", "normalized_error_percent",
-        "comparison_status", "unit", "run_status",
+        "job_id", "case", "condition", "monitor", "kind", "solver", "version", "processes", "last_step",
+        "last_time", "last_value", "reference_id", "reference_value", "absolute_error",
+        "normalized_error_percent", "comparison_status", "unit", "run_status",
     ]
     with (destination / "summary.csv").open("w", newline="", encoding="utf-8-sig") as stream:
         writer = csv.DictWriter(stream, fieldnames=columns)
@@ -284,6 +291,29 @@ def is_residual(name, declaration):
     )
 
 
+def is_experimental_comparison(comparison):
+    return comparison.get("kind", "experimental") == "experimental"
+
+
+def experimental_conditions(runs):
+    conditions = set()
+    for path, manifest, status in runs:
+        if status["status"] != "SUCCEEDED":
+            continue
+        references = manifest.get("condition", {}).get("references", {}).values()
+        has_reference = any(
+            reference.get("kind", "experimental") == "experimental" and "monitor" in reference
+            for reference in references
+        )
+        has_comparison = any(
+            is_experimental_comparison(comparison)
+            for comparison in manifest.get("comparisons", {}).get("monitors", [])
+        )
+        if has_reference or has_comparison:
+            conditions.add(condition_name(manifest))
+    return conditions
+
+
 def build_charts(runs):
     charts = OrderedDict()
     runs = [(path, manifest, status) for path, manifest, status in runs if status["status"] == "SUCCEEDED"]
@@ -295,6 +325,7 @@ def build_charts(runs):
         candidate = version_key(info["name"], info["version"], branch or None)
         if key not in latest or candidate > latest[key]:
             latest[key] = candidate
+    selected_runs = []
     for path, m, status in runs:
         info = m["actual_solver"]
         condition = m["identity"]["condition"]
@@ -302,18 +333,22 @@ def build_charts(runs):
         candidate = version_key(info["name"], info["version"], branch or None)
         if candidate != latest[(condition, info["name"], branch)]:
             continue
+        selected_runs.append((path, m, status))
+
+    experimental = experimental_conditions(selected_runs)
+    for path, m, status in selected_runs:
+        condition = m["identity"]["condition"]
         for name, records in m.get("monitors", {}).items():
             declaration = m["case"]["monitors"].get(name, {})
             unit = declaration.get("unit", "1")
             residual = is_residual(name, declaration)
+            if not residual:
+                continue
             selected = records
             if not selected:
                 continue
-            kind = "residual" if residual else "monitor"
-            if residual:
-                group = {"id": "residual", "title": "残差图像", "order": 10}
-            else:
-                group = {"id": "monitor", "title": "监控量图像", "order": 30}
+            kind = "residual"
+            group = CHART_SECTIONS[0]
             key = (kind, name, unit)
             chart = charts.setdefault(
                 key,
@@ -322,6 +357,7 @@ def build_charts(runs):
                     "renderer": "line",
                     "group": group,
                     "title": name,
+                    "path": [name],
                     "description": declaration.get("display_name", name),
                     "unit": unit,
                     "xlabel": "Step",
@@ -348,18 +384,41 @@ def build_charts(runs):
                     }
                 )
             chart["series"].append({"label": label(m), "job_id": m["job_id"], "points": points})
-            for comparison in m.get("comparisons", {}).get("monitors", []):
-                value = number(comparison.get("reference_value"))
-                xs = [p["x"] for p in points if p["x"] is not None]
-                if comparison["monitor"] == name and value is not None and xs:
-                    chart["series"].append(
-                        {
-                            "label": label(m) + " / reference " + comparison["reference_id"],
-                            "job_id": m["job_id"],
-                            "reference": True,
-                            "points": [{"x": x, "y": value, "raw": value} for x in (min(xs), max(xs))],
-                        }
-                    )
+        monitor_groups = OrderedDict()
+        for comparison in m.get("comparisons", {}).get("monitors", []):
+            if not is_experimental_comparison(comparison):
+                continue
+            key = (comparison["monitor"], comparison["reference_id"], comparison.get("unit", "1"))
+            monitor_groups.setdefault(key, []).append(comparison)
+        for (name, reference_id, unit), comparisons in monitor_groups.items():
+            key = ("monitor", condition, name, reference_id, unit)
+            chart = charts.setdefault(key, {
+                "kind": "monitor",
+                "renderer": "line",
+                "group": CHART_SECTIONS[2],
+                "title": " / ".join(
+                    (condition_name(m), name, reference_id, "实验参考值归一化偏差")
+                ),
+                "path": [condition_name(m), name, reference_id, "实验参考值归一化偏差"],
+                "description": "按实际监控记录逐步计算实验参考值归一化偏差。",
+                "unit": unit,
+                "xlabel": "Step", "ylabel": "归一化误差 [%]", "yscale": "linear", "series": [],
+            })
+            points = []
+            for comparison in comparisons:
+                value = None
+                if comparison.get("status") == "AVAILABLE":
+                    value = number(comparison.get("normalized_error"))
+                if value is not None:
+                    value *= 100
+                points.append({
+                    "x": number(comparison.get("step")), "y": value,
+                    "raw": comparison.get("status"), "quality": comparison.get("status"),
+                    "step": comparison.get("step"), "time": comparison.get("time"),
+                })
+            chart["series"].append({"label": label(m), "job_id": m["job_id"], "points": points})
+        if condition in experimental:
+            continue
         for row in m.get("comparisons", {}).get("fields", []):
             error_kind = "normalized_error"
             key = (
@@ -369,10 +428,17 @@ def build_charts(runs):
             chart = charts.setdefault(key, {
                 "kind": "analytical",
                 "renderer": "line",
-                "group": {"id": "analytical", "title": "解析解归一化误差", "order": 20},
+                "group": CHART_SECTIONS[1],
                 "title": " / ".join(
-                    (condition_name(m), row["domain"], row["field"], row["component"], "解析解归一化偏差")
+                    (
+                        condition_name(m), row["domain"], row["field"], row["reference_id"], row["component"],
+                        "解析解归一化偏差",
+                    )
                 ),
+                "path": [
+                    condition_name(m), row["domain"], row["field"], row["reference_id"], row["component"],
+                    "解析解归一化偏差",
+                ],
                 "description": "按实际保存迭代步比较；均值和 RMS 按单元体积加权。",
                 "unit": key[5], "component": row["component"], "error_kind": error_kind,
                 "xlabel": "Step", "ylabel": "归一化误差 [%]", "yscale": "linear", "series": [],
@@ -426,19 +492,39 @@ def monitor_rows(case_id, runs):
     rows = []
     for path, m, status in runs:
         for name, records in m.get("monitors", {}).items():
+            declaration = m["case"]["monitors"].get(name, {})
+            residual = is_residual(name, declaration)
             if records:
                 last = max(records, key=lambda r: (r["step"], r.get("time") or 0))
             else:
                 last = {}
-            comparisons = [r for r in m.get("comparisons", {}).get("monitors", []) if r["monitor"] == name] or [{}]
+            grouped = OrderedDict()
+            for comparison in m.get("comparisons", {}).get("monitors", []):
+                if comparison["monitor"] != name or not is_experimental_comparison(comparison):
+                    continue
+                reference_id = comparison["reference_id"]
+                step = number(comparison.get("step"))
+                candidate = (
+                    step if step is not None else -1, number(comparison.get("time")) or 0, comparison,
+                )
+                if reference_id not in grouped or candidate[:2] > grouped[reference_id][:2]:
+                    grouped[reference_id] = candidate
+            comparisons = [candidate[2] for candidate in grouped.values()] or [{}]
             for comparison in comparisons:
                 error = number(comparison.get("normalized_error"))
+                if residual:
+                    kind = "residual"
+                elif comparison.get("reference_id") is not None:
+                    kind = "experimental"
+                else:
+                    kind = "monitor"
                 rows.append(
                     {
                         "job_id": m["job_id"],
                         "case": case_id,
                         "condition": m["identity"]["condition"],
                         "monitor": name,
+                        "kind": kind,
                         "solver": m["actual_solver"]["name"],
                         "version": m["actual_solver"]["version"],
                         "processes": m["execution"]["processes"],
@@ -460,7 +546,10 @@ def monitor_rows(case_id, runs):
 def final_field_rows(runs):
     """Build report-only final-step analytical summaries without changing archives."""
     rows = []
+    experimental = experimental_conditions(runs)
     for path, manifest, status in runs:
+        if condition_name(manifest) in experimental:
+            continue
         grouped = {}
         for comparison in manifest.get("comparisons", {}).get("fields", []):
             key = (
@@ -486,13 +575,17 @@ def final_field_rows(runs):
                     "version": manifest["actual_solver"]["version"],
                     "domain": comparison["domain"],
                     "field": comparison["field"],
+                    "reference_id": comparison["reference_id"],
                     "component": comparison["component"],
                     "step": step,
                     "time": comparison.get("time"),
+                    "unit": comparison.get("unit", "1"),
                     "max_percent": percentages["max"],
                     "mean_percent": percentages["mean"],
                     "rms_percent": percentages["rms"],
                     "status": comparison.get("status"),
+                    "reason": comparison.get("reason"),
+                    "run_status": status["status"],
                 }
             )
     return rows
@@ -591,17 +684,21 @@ def escaped(value):
 
 
 def chart_sections(charts):
-    """Return ordered report sections declared by the generated chart descriptions."""
+    """Return the distinct report sections declared by actual chart descriptions."""
     sections = {}
     for chart in charts:
-        group = chart.get("group") or {}
-        group_id = group.get("id") or chart.get("kind") or "other"
-        if group_id not in sections:
-            sections[group_id] = {
-                "id": group_id,
-                "title": group.get("title") or group_id,
-                "order": group.get("order", 100),
-            }
+        group = chart.get("group")
+        if not isinstance(group, dict) or not group.get("id") or not group.get("title"):
+            raise ConfigurationError("图表缺少有效 group.id/group.title")
+        section = {
+            "id": str(group["id"]),
+            "title": str(group["title"]),
+            "order": group.get("order", 100),
+        }
+        previous = sections.get(section["id"])
+        if previous is not None and previous != section:
+            raise ConfigurationError("同一图表区段存在冲突描述: " + section["id"])
+        sections[section["id"]] = section
     return sorted(sections.values(), key=lambda section: (section["order"], section["id"]))
 
 
@@ -664,11 +761,15 @@ MONITOR_COLUMNS = [
     {"key": "processes", "label": "进程数", "type": "number"},
     {"key": "solver", "label": "求解器", "type": "text"},
     {"key": "monitor", "label": "监控量", "type": "text"},
+    {"key": "kind", "label": "类型", "type": "text"},
     {"key": "last_step", "label": "最后步", "type": "number"},
+    {"key": "last_time", "label": "最后时间", "type": "number"},
     {"key": "last_value", "label": "最后值", "type": "text", "sort_type": "number"},
+    {"key": "unit", "label": "单位", "type": "text"},
     {"key": "reference_value", "label": "参考值", "type": "text", "sort_type": "number"},
     {"key": "normalized_error_percent", "label": "归一化误差 / %", "type": "number"},
     {"key": "comparison_status", "label": "比较状态", "type": "status"},
+    {"key": "run_status", "label": "运行状态", "type": "status"},
     {"key": "job_id", "label": "作业 ID", "type": "text", "sortable": False},
 ]
 
@@ -677,13 +778,19 @@ FIELD_COLUMNS = [
     {"key": "condition", "label": "工况", "type": "text"},
     {"key": "processes", "label": "进程数", "type": "number"},
     {"key": "solver", "label": "求解器", "type": "text"},
+    {"key": "domain", "label": "域", "type": "text"},
     {"key": "field", "label": "场", "type": "text"},
+    {"key": "reference_id", "label": "参考 ID", "type": "text"},
     {"key": "component", "label": "分量", "type": "text"},
     {"key": "step", "label": "最后步", "type": "number"},
+    {"key": "time", "label": "物理时间", "type": "number"},
+    {"key": "unit", "label": "单位", "type": "text"},
     {"key": "max_percent", "label": "最大 / %", "type": "number"},
     {"key": "mean_percent", "label": "平均 / %", "type": "number"},
     {"key": "rms_percent", "label": "RMS / %", "type": "number"},
     {"key": "status", "label": "状态", "type": "status"},
+    {"key": "reason", "label": "原因", "type": "text"},
+    {"key": "run_status", "label": "运行状态", "type": "status"},
     {"key": "job_id", "label": "作业 ID", "type": "text", "sortable": False},
 ]
 
@@ -753,11 +860,15 @@ def render_html(case_id, created, runs, charts, rows, figures, destination):
                 "processes": row.get("processes"),
                 "solver": "%s-%s" % (row.get("solver"), row.get("version")),
                 "monitor": row.get("monitor"),
+                "kind": row.get("kind"),
                 "last_step": row.get("last_step"),
+                "last_time": row.get("last_time"),
                 "last_value": row.get("last_value"),
+                "unit": row.get("unit"),
                 "reference_value": row.get("reference_value"),
                 "normalized_error_percent": row.get("normalized_error_percent"),
                 "comparison_status": row.get("comparison_status"),
+                "run_status": row.get("run_status"),
                 "job_id": row.get("job_id"),
             }
         )
@@ -770,13 +881,19 @@ def render_html(case_id, created, runs, charts, rows, figures, destination):
                 "condition": row["condition"],
                 "processes": processes,
                 "solver": solver,
+                "domain": row["domain"],
                 "field": row["field"],
+                "reference_id": row["reference_id"],
                 "component": row["component"],
                 "step": row["step"],
+                "time": row["time"],
+                "unit": row["unit"],
                 "max_percent": row["max_percent"],
                 "mean_percent": row["mean_percent"],
                 "rms_percent": row["rms_percent"],
                 "status": row["status"],
+                "reason": row["reason"],
+                "run_status": row["run_status"],
                 "job_id": row["job_id"],
             }
         )
@@ -796,4 +913,6 @@ def render_html(case_id, created, runs, charts, rows, figures, destination):
         monitors_table=table(MONITOR_COLUMNS, monitor_rows_data, "monitors"),
         fields_table=table(FIELD_COLUMNS, field_rows_data, "fields"),
         chart_sections=chart_sections(charts),
+        has_monitor_rows=bool(monitor_rows_data),
+        has_field_rows=bool(field_rows_data),
     )

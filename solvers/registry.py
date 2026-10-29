@@ -240,20 +240,32 @@ def register_install(root, args):
     path = Path(args.path).resolve()
     if not path.is_dir():
         raise ConfigurationError("安装根目录不存在")
+
     environment = {"kind": args.environment}
     if args.environment_script:
         environment["script"] = str(Path(args.environment_script).resolve())
     if args.environment_module:
         environment["modules"] = args.environment_module
-    installation = {"solver": args.solver, "version": args.version, "path": str(path), "environment": environment}
+    installation = {
+        "solver": args.solver,
+        "version": args.version,
+        "path": str(path),
+        "environment": environment
+    }
+
     prepend = getattr(args, "path_prepend", None)
     if prepend:
         installation["path_prepend"] = list(prepend)
     activated = load_env(installation)
-    candidates = [cls for cls in ADAPTERS[args.solver].values() if cls.version == str(args.version)]
+
+    candidates = [
+        cls for cls in ADAPTERS[args.solver].values()
+        if cls.version == str(args.version)
+    ]
     if not candidates:
         raise VersionMismatchError("配置版本没有注册 Adapter: " + str(args.version))
     public = candidates[0]()
+
     info = public.probe(SimpleNamespace(environment=activated))
     if info.version != args.version:
         raise VersionMismatchError("配置 %s 与真实 %s 不一致" % (args.version, info.version))

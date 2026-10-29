@@ -443,9 +443,12 @@ class CoreTests(unittest.TestCase):
             context.condition = {
                 "references": {"ref": {"monitor": "a", "value": 1, "reference_scale": {"value": 1}, "source": None}}
             }
-            comparison = monitor_comparisons(context)[0]
-            self.assertEqual(comparison["status"], "UNAVAILABLE")
-            self.assertEqual(comparison["step"], 3)
+            comparisons = monitor_comparisons(context)
+            self.assertEqual([comparison["step"] for comparison in comparisons], [1, 3])
+            self.assertEqual([comparison["status"] for comparison in comparisons], ["AVAILABLE", "UNAVAILABLE"])
+            self.assertEqual(comparisons[0]["normalized_error"], 0)
+            self.assertIsNone(comparisons[1]["normalized_error"])
+            self.assertEqual(comparisons[1]["kind"], "experimental")
 
     def test_vector_magnitude_is_difference_of_norms(self):
         context = SimpleNamespace(

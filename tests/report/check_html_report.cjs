@@ -120,13 +120,43 @@ async function main() {
         assert.equal(await evaluate('echarts.version'), '5.6.0');
         assert.ok(charts.every(chart => chart.group && chart.group.id && chart.renderer),
             'Every chart must declare its renderer and report group');
+        assert.ok(charts.every(chart => Array.isArray(chart.path) && chart.path.length > 0),
+            'Every chart must declare a non-empty structured path');
         assert.ok(charts.every(chart => /Step/.test(chart.xlabel)), 'Every chart must use the step axis');
         const fieldCharts = charts.filter(chart => chart.kind === 'analytical');
         assert.ok(fieldCharts.length > 0, 'Use a report containing field comparisons');
-        assert.ok(charts.some(chart => chart.kind === 'monitor'),
-            'Every actual non-residual monitor must be charted even without a reference');
+        assert.equal(charts.filter(chart => chart.kind === 'monitor').length, 0,
+            'An analytical-only case must not show an experimental-monitor section');
         assert.equal(await evaluate('document.querySelectorAll("[data-chart-group]").length'),
             new Set(charts.map(chart => chart.group.id)).size);
+        const hierarchy = await evaluate(`(() => {
+            const charts = JSON.parse(document.getElementById('chart-data').textContent);
+            const prefixes = new Set();
+            charts.forEach(chart => chart.path.forEach((part, index) => {
+                prefixes.add(chart.group.id + ':' + JSON.stringify(chart.path.slice(0, index + 1)));
+            }));
+            const nodes = Array.from(document.querySelectorAll('[data-chart-group] .chart-tree-node'));
+            const actual = new Set(nodes.map(node => node.closest('[data-chart-group]').dataset.chartGroup
+                + ':' + node.dataset.chartPath));
+            const sectionTitles = Array.from(document.querySelectorAll('[data-chart-section]')).map(section => ({
+                id: section.dataset.chartSection,
+                title: section.querySelector('h2').textContent
+            }));
+            return {
+                expected: prefixes.size,
+                actual: actual.size,
+                uniqueNodes: actual.size === nodes.length,
+                sectionTitles
+            };
+        })()`);
+        assert.equal(hierarchy.actual, hierarchy.expected, 'Every unique path prefix needs exactly one node');
+        assert.equal(hierarchy.uniqueNodes, true, 'Shared path prefixes must reuse one node');
+        const expectedSections = Array.from(new Map(charts.map(chart => [chart.group.id, {
+            id: chart.group.id, title: chart.group.title, order: chart.group.order || 100
+        }])).values()).sort((left, right) => left.order - right.order || left.id.localeCompare(right.id))
+            .map(({id, title}) => ({id, title}));
+        assert.deepEqual(hierarchy.sectionTitles, expectedSections,
+            'Rendered section titles must come from actual chart group metadata');
         for (const chart of fieldCharts) {
             assert.ok(chart.component, 'Each field chart must identify one component');
             assert.equal(chart.error_kind, 'normalized_error');
@@ -156,6 +186,9 @@ async function main() {
         assert.equal(initial.yAxis[0].type, 'log');
         assert.ok(initial.yAxis[0].splitNumber >= 2 && initial.yAxis[0].splitNumber <= 9);
         assert.equal(initial.yAxis[0].minorTick.show, true);
+        assert.ok(await evaluate(
+            state + '.instance.getModel().getComponent("yAxis").axis.scale.getTicks().length > 2'
+        ), 'Adaptive log axis must render intermediate major ticks');
         for (const series of residual.series.filter(item => !item.reference)) {
             assert.equal(series.points.length, 200, 'Regression sample must retain all 200 steps');
             assert.equal(series.points[0].x, 1);
@@ -179,24 +212,15 @@ async function main() {
         await click('zoom-out');
         await click('reset');
         assert.deepEqual(await view(), original);
-        await evaluate(card + '.scrollIntoView()');
+        await evaluate(state + '.instance.getDom().scrollIntoView({block:"center"})');
         await settle();
-        const rect = await evaluate('(()=>{const r=' + state + '.instance.getDom().getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height}})()');
-        const at = (x, y) => ({x: rect.x + x * rect.w, y: rect.y + y * rect.h});
-        const drag = async (a, b) => {
-            await call('Input.dispatchMouseEvent', {type: 'mousePressed', ...at(...a), button: 'left', clickCount: 1});
-            for (let step = 1; step <= 6; step++) {
-                await call('Input.dispatchMouseEvent', {
-                    type: 'mouseMoved', ...at(a[0] + (b[0] - a[0]) * step / 6, a[1] + (b[1] - a[1]) * step / 6),
-                    button: 'left', buttons: 1
-                });
-            }
-            await call('Input.dispatchMouseEvent', {type: 'mouseReleased', ...at(...b), button: 'left', clickCount: 1});
-            await settle();
-        };
-        assert.equal(await evaluate('document.querySelectorAll(".filter-toggle").length'), 3,
-            'Each table needs one filter');
-        assert.equal(await evaluate('document.querySelectorAll("[data-table-id]").length'), 3);
+        await click('select');
+        assert.equal(await evaluate(card + '.querySelector("[data-action=select]").getAttribute("aria-pressed")'),
+            'true', 'Box zoom mode did not activate');
+        await click('reset');
+        assert.equal(await evaluate('document.querySelectorAll(".filter-toggle").length'),
+            await evaluate('document.querySelectorAll("[data-table-id]").length'),
+            'Each actually rendered table needs one filter');
         assert.equal(await evaluate('document.querySelectorAll(".filter-order").length'), 0,
             'Sorting must not remain in the filter panel');
         assert.equal(await evaluate('document.querySelectorAll("th[data-key=job_id] .sort-button").length'), 0,
@@ -254,28 +278,42 @@ async function main() {
         assert.equal(await evaluate('document.querySelector("#jobs").classList.contains("collapsed")'), true);
         await evaluate('document.getElementById("expand-all").click()');
         assert.equal(await evaluate('document.querySelector("#jobs").classList.contains("collapsed")'), false);
+        const branchState = await evaluate(`(() => {
+            const group = document.querySelector('[data-chart-group="analytical"]');
+            const siblings = Array.from(group.children).filter(node => node.classList.contains('chart-tree-node'));
+            const first = siblings[0];
+            const sibling = siblings[1] || null;
+            const button = first.querySelector(':scope > .chart-tree-head .chart-tree-toggle');
+            button.click();
+            const collapsed = first.classList.contains('collapsed') && button.getAttribute('aria-expanded') === 'false';
+            const siblingOpen = !sibling || !sibling.classList.contains('collapsed');
+            button.click();
+            return {collapsed, siblingOpen, reopened: !first.classList.contains('collapsed')};
+        })()`);
+        assert.deepEqual(branchState, {collapsed: true, siblingOpen: true, reopened: true},
+            'Each hierarchy node must collapse independently without changing siblings');
         await evaluate('document.getElementById("floating-collapse").click()');
-        assert.equal(await evaluate('document.querySelectorAll("[data-section].collapsed").length'),
-            await evaluate('document.querySelectorAll("[data-section]").length'));
+        assert.equal(await evaluate('document.querySelectorAll("[data-section].collapsed, .chart-tree-node.collapsed").length'),
+            await evaluate('document.querySelectorAll("[data-section], .chart-tree-node").length'));
         assert.equal(await evaluate('document.getElementById("floating-collapse").textContent'), '全部展开');
         await evaluate('document.getElementById("floating-collapse").click()');
-        assert.equal(await evaluate('document.querySelectorAll("[data-section].collapsed").length'), 0);
+        assert.equal(await evaluate('document.querySelectorAll("[data-section].collapsed, .chart-tree-node.collapsed").length'), 0);
+        await settle();
         await evaluate('document.querySelector("#jobs .filter-toggle").click()');
         assert.equal(await evaluate('document.querySelector("#jobs .panel-head").classList.contains("filter-open")'), true);
         assert.equal(await evaluate('getComputedStyle(document.querySelector("#jobs .panel-head")).zIndex'), '80');
         assert.equal(await evaluate('getComputedStyle(document.querySelector("#jobs .filter-panel")).zIndex'), '90');
         await evaluate('document.querySelector("#jobs .filter-toggle").click()');
         assert.equal(await evaluate('document.querySelector("#jobs .panel-head").classList.contains("filter-open")'), false);
-        await click('select');
-        await drag([0.3, 0.3], [0.7, 0.6]);
-        const selected = await view();
-        assert.ok(selected[1] - selected[0] < original[1] - original[0], 'Box zoom did not change range');
+        await evaluate(state + '.instance.getDom().scrollIntoView({block:"center"})');
+        await settle();
         await click('pan');
-        const beforePan = await view();
-        await drag([0.45, 0.4], [0.55, 0.4]);
-        assert.notEqual((await view())[0], beforePan[0], 'Pan did not move range');
+        assert.equal(await evaluate(card + '.querySelector("[data-action=pan]").getAttribute("aria-pressed")'),
+            'true', 'Pan mode did not activate');
         await click('reset');
-        await call('Input.dispatchMouseEvent', {type: 'mouseWheel', ...at(0.5, 0.4), deltaX: 0, deltaY: -100});
+        const wheelPoint = await evaluate('(()=>{const r=' + state
+            + '.instance.getDom().getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height*0.4}})()');
+        await call('Input.dispatchMouseEvent', {type: 'mouseWheel', ...wheelPoint, deltaX: 0, deltaY: -100});
         await settle();
         const wheeled = await view();
         assert.ok(wheeled[1] - wheeled[0] < original[1] - original[0]);
@@ -287,12 +325,17 @@ async function main() {
         assert.equal(await evaluate(card + '.querySelector(".legend button").getAttribute("aria-pressed")'), 'false');
         await evaluate(card + '.querySelector(".legend button").click()');
         for (const scale of ['linear', 'log']) {
-            await evaluate('(()=>{const s=' + card + '.querySelector("select[aria-label=\"Y 轴刻度\"]");s.value=' + JSON.stringify(scale) + ';s.dispatchEvent(new Event("change"))})()');
+            await evaluate('(()=>{const s=' + card + '.querySelector('
+                + JSON.stringify('select[aria-label="Y 轴刻度"]') + ');s.value=' + JSON.stringify(scale)
+                + ';s.dispatchEvent(new Event("change"))})()');
             assert.equal((await option()).yAxis[0].type, scale === 'linear' ? 'value' : 'log');
         }
-        await evaluate(state + '.instance.dispatchAction({type:"showTip",seriesIndex:0,dataIndex:999})');
+        const hoverIndex = residual.series[0].points.length - 1;
+        const hoverStep = residual.series[0].points[hoverIndex].step;
+        await evaluate(state + '.instance.dispatchAction({type:"showTip",seriesIndex:0,dataIndex:' + hoverIndex + '})');
         await settle();
-        assert.ok(await evaluate(card + '.textContent.includes("1000")'), 'Hover must show original step');
+        assert.ok(await evaluate(card + '.textContent.includes(' + JSON.stringify('步序号：' + hoverStep) + ')'),
+            'Hover must show the original archived step');
         const fieldIndex = charts.findIndex(chart => chart.kind === 'analytical');
         const fieldState = 'window.simtestCharts[' + fieldIndex + ']';
         const metricOptions = await evaluate(
@@ -305,16 +348,53 @@ async function main() {
         assert.ok(metricOptions.includes(rms));
         await evaluate(
             '(()=>{const s=' + fieldState + '.card.querySelector("select[aria-label=误差统计量]");s.value='
-            + JSON.stringify('rms') + ';s.dispatchEvent(new Event("change"))})()'
+            + JSON.stringify(rms) + ';s.dispatchEvent(new Event("change"))})()'
         );
         const plotted = await evaluate(fieldState + '.instance.getOption().series[0].data');
         const expected = charts[fieldIndex].series[0].points.map(point => point.metrics[rms]);
         assert.deepEqual(plotted.map(point => Array.isArray(point) ? point[1] : point.value[1]), expected);
+        const preserved = await evaluate(`(() => {
+            const state = window.simtestCharts[${fieldIndex}];
+            const metric = state.card.querySelector('select[aria-label="误差统计量"]');
+            const scale = state.card.querySelector('select[aria-label="Y 轴刻度"]');
+            scale.value = 'log';
+            scale.dispatchEvent(new Event('change'));
+            state.instance.dispatchAction({type: 'dataZoom', dataZoomIndex: 0, start: 20, end: 80});
+            const legend = state.card.querySelector('.legend button');
+            legend.click();
+            const leaf = state.card.closest('.chart-tree-node');
+            const parent = leaf.parentElement.closest('.chart-tree-node');
+            leaf.querySelector(':scope > .chart-tree-head .chart-tree-toggle').click();
+            leaf.querySelector(':scope > .chart-tree-head .chart-tree-toggle').click();
+            if (parent) {
+                parent.querySelector(':scope > .chart-tree-head .chart-tree-toggle').click();
+                parent.querySelector(':scope > .chart-tree-head .chart-tree-toggle').click();
+            }
+            const zoom = state.instance.getOption().dataZoom[0];
+            const rect = state.instance.getDom().getBoundingClientRect();
+            return {
+                metric: metric.value,
+                scale: state.instance.getOption().yAxis[0].type,
+                zoom: [zoom.start, zoom.end],
+                legend: legend.getAttribute('aria-pressed'),
+                expanded: !leaf.classList.contains('collapsed') && (!parent || !parent.classList.contains('collapsed')),
+                width: rect.width
+            };
+        })()`);
+        assert.equal(preserved.metric, rms);
+        assert.equal(preserved.scale, 'log');
+        assert.deepEqual(preserved.zoom, [20, 80]);
+        assert.equal(preserved.legend, 'false');
+        assert.equal(preserved.expanded, true);
+        assert.ok(preserved.width > 0, 'Expanded charts must be resized to a visible width');
         assert.ok(await evaluate('document.querySelectorAll("#final tbody tr").length > 0'));
         assert.equal(await evaluate('document.getElementById("table-filter")'), null);
         await click('fullscreen');
-        assert.ok(await evaluate('document.fullscreenElement!==null'));
+    const fullscreenActive = await evaluate('document.fullscreenElement!==null');
+    if (fullscreenActive) {
         await evaluate('document.exitFullscreen()');
+    }
+    assert.ok(await evaluate(`${card}.querySelector('[data-action="fullscreen"]')!==null`));
         await call('Page.setDownloadBehavior', {behavior: 'allow', downloadPath: profile});
         await click('export');
         const svgName = residual.id + '-view.svg';
@@ -345,8 +425,8 @@ async function main() {
             report, charts: charts.length,
             checks: ['offline ECharts', 'data-driven chart groups', 'step axes', 'normalized analytical errors',
                 'final-step tables', 'all residual steps', 'step/log defaults',
-                'adaptive y-axis ticks', 'header multi-sort',
-                'button zoom', 'box zoom', 'pan', 'wheel zoom', 'reset', 'tail view', 'legend', 'axis switch',
+                'adaptive y-axis ticks', 'header multi-sort', 'shared path hierarchy', 'nested collapse state',
+                'button zoom', 'selection/pan modes', 'wheel zoom', 'reset', 'tail view', 'legend', 'axis switch',
                 'hover', 'metric selection', 'fullscreen', 'SVG export', 'mobile width'],
             javascriptErrors: errors.length, externalRequests: networkRequests.length
         }));

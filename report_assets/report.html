@@ -36,14 +36,18 @@
         <section id="final" class="panel" data-section>
             <div class="panel-head"><h2>最后值</h2><button type="button" class="section-toggle" aria-expanded="true"></button></div>
             <div class="panel-body">
+                {% if has_monitor_rows %}
                 <div class="table-block">
-                    <div class="table-head"><h3>监控量最终值</h3><div class="filter-host" data-filter-for="monitors"></div></div>
+                    <div class="table-head"><h3>监控记录最终结果</h3><div class="filter-host" data-filter-for="monitors"></div></div>
                     {{ monitors_table | safe }}
                 </div>
+                {% endif %}
+                {% if has_field_rows %}
                 <div class="table-block">
                     <div class="table-head"><h3>解析解最终归一化偏差</h3><div class="filter-host" data-filter-for="fields"></div></div>
                     {{ fields_table | safe }}
                 </div>
+                {% endif %}
             </div>
         </section>
         <section id="sources" class="panel" data-section>

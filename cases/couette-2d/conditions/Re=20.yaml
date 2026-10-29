@@ -1,0 +1,32 @@
+values:
+  wall_velocity: {value: 2.0, unit: m/s}
+
+references:
+  analytical_velocity:
+    kind: analytical
+    field: velocity
+    domain: internalMesh
+    reference_scale: {value: 2.0, unit: m/s}
+    expression:
+      x: "U * y / H"
+      y: "0"
+      z: "0"
+    parameters:
+      U: {value: 2.0, unit: m/s}
+      H: {value: 0.01, unit: m}
+    source:
+      kind: formula
+      file: references/startup-couette-solution.md
+      locator: "Equation 1; steady linear Couette profile"
+
+  analytical_pressure:
+    kind: analytical
+    field: pressure
+    domain: internalMesh
+    reference_scale: {value: 1.0, unit: m^2/s^2}
+    expression: "0"
+    parameters: {}
+    source:
+      kind: formula
+      file: references/startup-couette-solution.md
+      locator: "Equation 2; zero kinematic pressure"

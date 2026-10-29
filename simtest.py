@@ -53,7 +53,7 @@ def parser():
     validate = commands.add_parser("validate")
     validate.add_argument("case")
     validate.add_argument("--condition")
-    validate.add_argument("--solver", default="OpenFOAM@latest")
+    validate.add_argument("--solver", default="OpenFOAM@latest") #需要后续调整
     validate.add_argument("--config")
 
     run = commands.add_parser("run")

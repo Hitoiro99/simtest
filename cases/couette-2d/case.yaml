@@ -10,6 +10,10 @@ execution:
   - backend: serial
     processes: 2
 
+  # - backend: openmp
+  #  openmp_threads: 32
+  #  processes: 2
+
 constants:
   wall_gap:
     type: real
@@ -52,13 +56,13 @@ derived_variables:
     expression: "wall_velocity * wall_gap / kinematic_viscosity"
 
 monitors:
-  mean_velocity:
-    display_name: 体积加权平均流向速度
-    type: real
-    unit: m/s
-    mapping:
-      - solver: OpenFOAM
-        name: volAverage(Ux)
+  #mean_velocity:
+  #  display_name: 体积加权平均流向速度
+  #  type: real
+  #  unit: m/s
+  #  mapping:
+  #    - solver: OpenFOAM
+  #      name: volAverage(Ux)
   residual_Ux:
     display_name: 每迭代步首个流向速度线性求解初始残差
     type: real

@@ -174,12 +174,57 @@ input:focus-visible {
 }
 
 .chart {
-    margin: 24px 0;
+    margin: 14px 0 20px;
     border: 1px solid #dce5ed;
     border-radius: 8px;
     padding: 18px;
     background: white;
     position: relative
+}
+
+.chart-tree-node {
+    margin: 10px 0 10px var(--chart-indent);
+    border-left: 2px solid #dbe7f0;
+    padding-left: 10px
+}
+
+.chart-tree-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 30px;
+    border-bottom: 1px solid #e5edf3
+}
+
+.chart-tree-title {
+    margin: 0;
+    color: #234663;
+    font-size: var(--chart-title-size);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+    cursor: pointer
+}
+
+.chart-tree-toggle {
+    width: 22px;
+    height: 22px;
+    margin-left: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: #6b7c8c
+}
+
+.chart-tree-toggle::before {
+    content: "▾"
+}
+
+.chart-tree-node.collapsed > .chart-tree-head .chart-tree-toggle::before {
+    content: "▸"
+}
+
+.chart-tree-node.collapsed > .chart-tree-body {
+    display: none
 }
 
 .chart h3 {
@@ -465,8 +510,8 @@ details[open] summary::before { content: "▾"; }
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 12px;
+    width: 16px;
+    height: 10px;
     padding: 0;
     border: 0;
     border-radius: 3px;
@@ -476,8 +521,8 @@ details[open] summary::before { content: "▾"; }
 }
 
 .sort-button svg {
-    width: 13px;
-    height: 10px;
+    width: 11px;
+    height: 8px;
     fill: currentColor;
 }
 

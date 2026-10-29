@@ -9,6 +9,9 @@
         SUCCEEDED: 0, AVAILABLE: 0, NO_REFERENCE: 1, UNAVAILABLE: 2,
         UNSUPPORTED: 3, TIMEOUT: 4, CANCELLED: 5, CRASHED: 6, INFRA_ERROR: 7
     };
+    const chartStates = [];
+    const collapsibles = [];
+    let syncCollapsibles = () => {};
 
     function element(tag, text, parent, attributes = {}) {
         const node = document.createElement(tag);
@@ -29,6 +32,68 @@
         return Number(value.toPrecision(6)).toString();
     }
 
+    function resizeChartsWithin(root) {
+        requestAnimationFrame(() => {
+            chartStates.forEach(state => {
+                if (root.contains(state.card)) {
+                    state.instance.resize();
+                }
+            });
+        });
+    }
+
+    function collapsible(root, toggle, heading) {
+        const set = collapsed => {
+            root.classList.toggle('collapsed', collapsed);
+            toggle.setAttribute('aria-expanded', String(!collapsed));
+            if (!collapsed) {
+                resizeChartsWithin(root);
+            }
+        };
+        const switchState = () => {
+            set(!root.classList.contains('collapsed'));
+            syncCollapsibles();
+        };
+        toggle.onclick = switchState;
+        heading.onclick = switchState;
+        const state = {root, set};
+        collapsibles.push(state);
+        return state;
+    }
+
+    function chartTree(container) {
+        const branches = new Map();
+        return chart => {
+            const path = Array.isArray(chart.path) && chart.path.length ? chart.path : [chart.title];
+            let parent = container;
+            const prefix = [];
+            path.forEach((part, depth) => {
+                prefix.push(String(part));
+                const key = JSON.stringify(prefix);
+                let branch = branches.get(key);
+                if (!branch) {
+                    const root = element('section', null, parent, {
+                        class: 'chart-tree-node', 'data-chart-path': key, 'data-chart-depth': String(depth)
+                    });
+                    root.style.setProperty('--chart-indent', Math.min(depth, 5) * 8 + 'px');
+                    root.style.setProperty('--chart-title-size', Math.max(14, 18 - Math.min(depth, 4)) + 'px');
+                    const head = element('div', null, root, {class: 'chart-tree-head'});
+                    const heading = element('h3', part, head, {class: 'chart-tree-title'});
+                    const toggle = element('button', null, head, {
+                        type: 'button', class: 'chart-tree-toggle', 'aria-expanded': 'true',
+                        'aria-label': '收起或展开 ' + String(part)
+                    });
+                    const body = element('div', null, root, {class: 'chart-tree-body'});
+                    branch = {root, body};
+                    branches.set(key, branch);
+                    collapsible(root, toggle, heading);
+                }
+                parent = branch.body;
+            });
+            return parent;
+        };
+    }
+
     class Chart {
         constructor(chart, container) {
             this.chart = chart;
@@ -37,9 +102,8 @@
             this.valueKey = chart.default_value || (this.valueOptions[0] && this.valueOptions[0].key) || null;
             this.hidden = new Set();
             this.card = element('article', null, container, {
-                class: 'chart', id: chart.id
+                class: 'chart', id: chart.id, 'aria-label': chart.title
             });
-            element('h3', chart.title, this.card);
             element('p', chart.description, this.card, {class: 'chart-subtitle'});
             const bar = element('div', null, this.card, {
                 class: 'toolbar', role: 'group', 'aria-label': '图表操作'
@@ -110,6 +174,7 @@
             this.plot.addEventListener('dblclick', () => this.reset());
             this.resizeObserver = new ResizeObserver(() => this.instance.resize());
             this.resizeObserver.observe(this.plot);
+            chartStates.push(this);
         }
 
         button(parent, text, action, callback) {
@@ -211,6 +276,7 @@
                         yAxis.max *= 10;
                     }
                 }
+                yAxis.interval = this.logInterval(yAxis.min, yAxis.max);
             } else if (dataMin !== Infinity) {
                 const span = dataMax - dataMin;
                 const pad = span > 0 ? span * 0.05 : (Math.abs(dataMax) * 0.1 || 0.5);
@@ -258,6 +324,18 @@
             }
             const decades = Math.abs(Math.log10(maximum) - Math.log10(minimum));
             return Math.max(2, Math.min(budget, Math.ceil(decades)));
+        }
+
+        logInterval(minimum, maximum) {
+            if (!finite(minimum) || !finite(maximum) || minimum <= 0 || maximum <= 0) {
+                return 1;
+            }
+            const lower = Math.floor(Math.log10(minimum));
+            const upper = Math.ceil(Math.log10(maximum));
+            const decades = Math.max(1, upper - lower);
+            const height = this.plot ? this.plot.clientHeight : 460;
+            const maximumIntervals = Math.max(2, Math.min(8, Math.floor(height / 64)));
+            return Math.max(1, Math.ceil(decades / maximumIntervals));
         }
 
         updateNote() {
@@ -602,48 +680,40 @@
     });
     window.simtestTables = tables;
 
-    const sections = Array.from(document.querySelectorAll('[data-section]'));
-    sections.forEach(section => {
-        const toggle = section.querySelector('.section-toggle');
-        const set = collapsed => {
-            section.classList.toggle('collapsed', collapsed);
-            toggle.setAttribute('aria-expanded', String(!collapsed));
-        };
-        toggle.onclick = () => set(!section.classList.contains('collapsed'));
-        section.querySelector('h2').onclick = () => set(!section.classList.contains('collapsed'));
-    });
-    const floating = document.getElementById('floating-collapse');
-    const syncFloating = () => {
-        const collapsed = sections.every(section => section.classList.contains('collapsed'));
-        floating.dataset.collapsed = String(collapsed);
-        floating.textContent = collapsed ? '全部展开' : '全部收起';
-    };
-    const setAll = collapsed => {
-        sections.forEach(section => section.classList.toggle('collapsed', collapsed));
-        syncFloating();
-    };
-    document.getElementById('expand-all').onclick = () => setAll(false);
-    document.getElementById('collapse-all').onclick = () => setAll(true);
-    floating.onclick = () => setAll(floating.dataset.collapsed !== 'true');
-    sections.forEach(section => {
-        const toggle = section.querySelector('.section-toggle');
-        const original = toggle.onclick;
-        toggle.onclick = () => { original(); syncFloating(); };
-        const heading = section.querySelector('h2');
-        const click = heading.onclick;
-        heading.onclick = () => { click(); syncFloating(); };
-    });
-    syncFloating();
-
-    const flat = [];
+    const trees = new Map();
     charts.forEach(chart => {
         const group = chart.group && chart.group.id;
         const container = Array.from(document.querySelectorAll('[data-chart-group]')).find(
             candidate => candidate.dataset.chartGroup === group
         );
         if (container) {
-            flat.push(new Chart(chart, container));
+            if (!trees.has(container)) {
+                trees.set(container, chartTree(container));
+            }
+            new Chart(chart, trees.get(container)(chart));
         }
     });
-    window.simtestCharts = flat;
+
+    const sections = Array.from(document.querySelectorAll('[data-section]'));
+    sections.forEach(section => collapsible(
+        section, section.querySelector('.section-toggle'), section.querySelector('h2')
+    ));
+    const floating = document.getElementById('floating-collapse');
+    syncCollapsibles = () => {
+        const collapsed = collapsibles.every(item => item.root.classList.contains('collapsed'));
+        floating.dataset.collapsed = String(collapsed);
+        floating.textContent = collapsed ? '全部展开' : '全部收起';
+    };
+    const setAll = collapsed => {
+        collapsibles.forEach(item => item.set(collapsed));
+        syncCollapsibles();
+        if (!collapsed) {
+            requestAnimationFrame(() => chartStates.forEach(state => state.instance.resize()));
+        }
+    };
+    document.getElementById('expand-all').onclick = () => setAll(false);
+    document.getElementById('collapse-all').onclick = () => setAll(true);
+    floating.onclick = () => setAll(floating.dataset.collapsed !== 'true');
+    syncCollapsibles();
+    window.simtestCharts = chartStates;
 })();

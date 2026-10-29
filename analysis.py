@@ -97,31 +97,33 @@ def monitor_comparisons(context):
         declaration = context.case["monitors"][name]
         unit = declaration.get("unit", "")
         records = context.manifest["monitors"][name]
-        last = max(records, key=lambda record: (record["step"], record["time"] or 0))
-        value = float(last["value"])
         target = convert(reference["value"], reference.get("unit", unit), unit)
         scale = reference["reference_scale"]
         scale_value = convert(scale["value"], scale.get("unit", unit), unit)
-        available = math.isfinite(value) and last["quality"] == "valid"
-        if available:
-            error = abs(value - target)
-            normalized_error = error / max(abs(target), scale_value)
-        else:
-            error = None
-            normalized_error = None
-        results.append(
-            {
-                "reference_id": ref_id,
-                "monitor": name,
-                "step": last["step"],
-                "time": last["time"],
-                "value": value,
-                "reference_value": target,
-                "unit": unit,
-                "absolute_error": error,
-                "normalized_error": normalized_error,
-                "status": "AVAILABLE" if available else "UNAVAILABLE",
-                "source": reference["source"],
-            }
-        )
+        for record in records:
+            value = float(record["value"])
+            available = math.isfinite(value) and record.get("quality", "valid") == "valid"
+            if available:
+                error = abs(value - target)
+                normalized_error = error / max(abs(target), scale_value)
+            else:
+                error = None
+                normalized_error = None
+            results.append(
+                {
+                    "reference_id": ref_id,
+                    "kind": reference.get("kind", "experimental"),
+                    "monitor": name,
+                    "step": record["step"],
+                    "time": record.get("time"),
+                    "value": value,
+                    "reference_value": target,
+                    "reference_scale": scale_value,
+                    "unit": unit,
+                    "absolute_error": error,
+                    "normalized_error": normalized_error,
+                    "status": "AVAILABLE" if available else "UNAVAILABLE",
+                    "source": reference["source"],
+                }
+            )
     return results
